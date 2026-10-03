@@ -7,19 +7,40 @@ import {
   type TripState,
 } from "@/types/trip";
 import { findPlaces } from "./places";
-import { selectStops } from "./gemini";
+
 import { scheduleTrip } from "./routes";
-import { dataMode } from "./server/env";
+import { mapsMode } from "./server/env";
 import { AppError } from "./server/http";
 
 export async function planTrip(request: TripRequest): Promise<TripState> {
-  if (dataMode() === "live" && Date.parse(request.startTime) < Date.now())
+  if (
+    mapsMode() === "live" &&
+    Date.parse(request.startTime) < Date.now() - 60000
+  )
     throw new AppError(
       "PAST_DEPARTURE",
       "Choose a future departure for live planning.",
     );
-  const candidates = await findPlaces(request);
-  const selected = await selectStops(request, candidates);
+  // Explicit selections are authoritative. No Gemini request is made here.
+  const selected =
+    request.selectedStops !== undefined
+      ? request.selectedStops.map((stop) => ({
+          ...stop,
+          arrivalTime: request.startTime,
+          reason: "Chosen by you.",
+        }))
+      : mapsMode() === "demo"
+        ? (await findPlaces(request)).map((place) => ({
+            ...place,
+            durationMinutes: 30,
+            locked: false,
+            priority: "optional" as const,
+            arrivalTime: request.startTime,
+            reason: `A sample ${place.category} stop for testing your itinerary.`,
+          }))
+        : [];
+  if (new Set(selected.map((stop) => stop.id)).size !== selected.length)
+    throw new AppError("DUPLICATE_STOP", "Choose each stop once.");
   const scheduled = await scheduleTrip(request, selected);
   if (Date.parse(scheduled.arrivalTime) > Date.parse(request.endTime))
     throw new AppError(
@@ -29,16 +50,16 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
     );
   return tripStateSchema.parse({
     id: crypto.randomUUID(),
-    request,
+    request: { ...request, selectedStops: scheduled.stops },
     ...scheduled,
     status: "ready",
-    source: dataMode(),
+    source: mapsMode(),
     summary:
-      dataMode() === "demo"
+      mapsMode() === "demo"
         ? "Your sample day, with a little room to explore."
         : "Your interests, connected into a day out.",
     warnings:
-      dataMode() === "demo"
+      mapsMode() === "demo"
         ? [
             "Fictional sample venues and estimated travel times. This is not a navigable route.",
           ]
@@ -52,7 +73,7 @@ export async function replanTrip(
   trip: TripState,
   event: TripEvent,
 ): Promise<TripState> {
-  if (dataMode() !== "demo" || trip.source !== "demo")
+  if (mapsMode() !== "demo" || trip.source !== "demo")
     throw new AppError(
       "NOT_IMPLEMENTED",
       "Live replanning is the next team milestone. These event controls currently support demo trips only.",
@@ -86,11 +107,13 @@ export async function replanTrip(
   let scheduled = await scheduleTrip(request, stops);
   const removed: string[] = [];
   while (Date.parse(scheduled.arrivalTime) > Date.parse(request.endTime)) {
-    const index = stops.findLastIndex((stop) => !stop.locked);
+    const index = stops.findLastIndex(
+      (stop) => !stop.locked && stop.priority !== "required",
+    );
     if (index < 0)
       throw new AppError(
         "LOCKED_CONFLICT",
-        "The time window cannot accommodate travel and locked stops. Unlock a stop or allow more time.",
+        "The time window cannot accommodate travel and required or locked stops. Remove a chosen stop or allow more time.",
         422,
       );
     removed.push(stops[index].name);
@@ -100,7 +123,7 @@ export async function replanTrip(
   if (removed.length) summary += ` Removed to fit: ${removed.join(", ")}.`;
   return tripStateSchema.parse({
     ...trip,
-    request,
+    request: { ...request, selectedStops: scheduled.stops },
     ...scheduled,
     summary,
     lastUpdated: new Date().toISOString(),
