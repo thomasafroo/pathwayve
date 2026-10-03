@@ -48,6 +48,7 @@ export function exampleRequest(): TripRequest {
   const start = new Date(Date.now() + 60 * 60 * 1000);
   start.setSeconds(0, 0);
   return {
+    timeZone: "America/Vancouver",
     origin: endpoints[0],
     destination: endpoints[1],
     startTime: start.toISOString(),

@@ -1,118 +1,362 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   APIProvider,
   Map as GoogleMap,
   AdvancedMarker,
-  Pin,
   useMap,
+  useApiLoadingStatus,
+  APILoadingStatus,
 } from "@vis.gl/react-google-maps";
-import type { TripState } from "@/types/trip";
+import type { Location, TripState } from "@/types/trip";
+import { endpoints } from "@/lib/fixtures";
+import { Icon } from "./Icon";
 
-function RouteOverlay({ trip }: { trip: TripState }) {
+type MapProps = {
+  trip: TripState | null;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onPick: (location: Location) => void;
+  picking: boolean;
+  onCancelPick: () => void;
+};
+function RouteOverlay({
+  trip,
+  selectedId,
+  fitCount,
+}: {
+  trip: TripState | null;
+  selectedId: string | null;
+  fitCount: number;
+}) {
   const map = useMap();
   useEffect(() => {
-    if (!map) return;
+    if (!map || !trip) return;
     const paths = trip.legs.map(
       (leg) =>
         new google.maps.Polyline({
           map,
           path: leg.path,
-          strokeColor: "#146b55",
-          strokeWeight: 4,
-          strokeOpacity: 0.85,
+          strokeColor:
+            trip.request.transportation === "driving"
+              ? "#356fb3"
+              : trip.request.transportation === "walking"
+                ? "#b78136"
+                : "#24725c",
+          strokeWeight: 5,
+          strokeOpacity: trip.source === "demo" ? 0 : 0.85,
+          ...(trip.source === "demo"
+            ? {
+                icons: [
+                  {
+                    icon: { path: "M 0,-1 0,1", strokeOpacity: 0.85, scale: 3 },
+                    offset: "0",
+                    repeat: "15px",
+                  },
+                ],
+              }
+            : {}),
         }),
     );
-    const bounds = new google.maps.LatLngBounds();
-    [
-      trip.request.origin.location,
-      ...trip.stops.map((stop) => stop.location),
-      trip.request.destination.location,
-    ].forEach((point) => bounds.extend(point));
-    map.fitBounds(bounds, 60);
     return () => paths.forEach((path) => path.setMap(null));
   }, [map, trip]);
+  useEffect(() => {
+    if (!map) return;
+    const bounds = new google.maps.LatLngBounds();
+    const points = trip
+      ? [
+          trip.request.origin.location,
+          ...trip.stops.map((s) => s.location),
+          trip.request.destination.location,
+        ]
+      : endpoints.map((e) => e.location);
+    points.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds, { top: 90, right: 70, bottom: 85, left: 70 });
+  }, [map, trip, fitCount]);
+  useEffect(() => {
+    const stop = trip?.stops.find((s) => s.id === selectedId);
+    if (map && stop) map.panTo(stop.location);
+  }, [map, selectedId, trip]);
   return null;
 }
-export function Map({ trip }: { trip: TripState | null }) {
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  if (key && trip)
+function MapLoading() {
+  const status = useApiLoadingStatus();
+  if (
+    status === APILoadingStatus.AUTH_FAILURE ||
+    status === APILoadingStatus.FAILED
+  )
     return (
-      <section className="map-panel" aria-label="Trip map">
-        <APIProvider apiKey={key}>
+      <div className="map-loading" role="alert">
+        Google Maps couldn’t load. Check the browser key, billing, and website
+        restrictions, then reload.
+      </div>
+    );
+  return status !== APILoadingStatus.LOADED ? (
+    <div className="map-loading">Opening your map…</div>
+  ) : null;
+}
+function RouteSketch({
+  trip,
+  selectedId,
+  onSelect,
+}: Pick<MapProps, "trip" | "selectedId" | "onSelect">) {
+  const points = trip
+    ? [
+        {
+          id: "origin",
+          name: trip.request.origin.name,
+          location: trip.request.origin.location,
+        },
+        ...trip.stops,
+        {
+          id: "destination",
+          name: trip.request.destination.name,
+          location: trip.request.destination.location,
+        },
+      ]
+    : [
+        { id: "origin", ...endpoints[0] },
+        { id: "destination", ...endpoints[1] },
+      ];
+  const lngs = points.map((p) => p.location.lng),
+    lats = points.map((p) => p.location.lat);
+  const minLng = Math.min(...lngs),
+    maxLng = Math.max(...lngs),
+    minLat = Math.min(...lats),
+    maxLat = Math.max(...lats);
+  const plotted = points.map((p) => ({
+    ...p,
+    x:
+      95 + ((p.location.lng - minLng) / Math.max(maxLng - minLng, 0.015)) * 610,
+    y:
+      300 -
+      ((p.location.lat - minLat) / Math.max(maxLat - minLat, 0.035)) * 160,
+  }));
+  return (
+    <div className="sketch-wrap">
+      <svg
+        className="route-sketch"
+        viewBox="0 0 800 440"
+        role="img"
+        aria-label="Approximate stop positions, not a street map"
+      >
+        <defs>
+          <pattern
+            id="map-grid"
+            width="32"
+            height="32"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M 32 0 L 0 0 0 32"
+              fill="none"
+              stroke="#cbd9cf"
+              strokeWidth=".6"
+            />
+          </pattern>
+        </defs>
+        <rect width="800" height="440" fill="#eaf0e8" />
+        <rect width="800" height="440" fill="url(#map-grid)" />
+        <ellipse
+          cx="400"
+          cy="230"
+          rx="275"
+          ry="135"
+          fill="none"
+          stroke="#cfddd0"
+          strokeDasharray="4 9"
+        />
+        <text x="400" y="105" textAnchor="middle" className="sketch-region">
+          YOUR NEXT LITTLE ADVENTURE
+        </text>
+        <polyline
+          points={plotted.map((p) => `${p.x},${p.y}`).join(" ")}
+          fill="none"
+          stroke="#24725c"
+          strokeWidth="3"
+          strokeDasharray="6 7"
+          strokeLinejoin="round"
+        />
+        {plotted.map((point, index) => (
+          <g key={point.id}>
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r={selectedId === point.id ? 24 : 20}
+              fill={
+                index === 0 || index === plotted.length - 1
+                  ? "#fbfcf7"
+                  : "#24725c"
+              }
+              stroke="#24725c"
+              strokeWidth="2"
+            />
+            <text
+              x={point.x}
+              y={point.y + 5}
+              textAnchor="middle"
+              fill={
+                index === 0 || index === plotted.length - 1 ? "#24725c" : "#fff"
+              }
+              fontSize="13"
+              fontWeight="700"
+            >
+              {index === 0 ? "S" : index === plotted.length - 1 ? "E" : index}
+            </text>
+            {(index === 0 || index === plotted.length - 1) && (
+              <text
+                x={point.x}
+                y={point.y + 38}
+                textAnchor="middle"
+                className="sketch-label"
+              >
+                {point.name}
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+      {trip && (
+        <div
+          className="sketch-stop-picker"
+          aria-label="Select a stop on the route preview"
+        >
+          {trip.stops.map((stop, index) => (
+            <button
+              key={stop.id}
+              aria-pressed={selectedId === stop.id}
+              onClick={() => onSelect(stop.id)}
+            >
+              <span>{index + 1}</span>
+              {stop.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="map-setup-note">
+        <Icon name="layers" size={16} />
+        <span>
+          Route sketch · Google Maps connects when a map key is configured
+        </span>
+      </div>
+    </div>
+  );
+}
+export function Map(props: MapProps) {
+  const { trip, selectedId, onSelect, picking, onPick, onCancelPick } = props;
+  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const [fitCount, setFitCount] = useState(0);
+  const selected = trip?.stops.find((s) => s.id === selectedId);
+  return (
+    <section
+      className={`map-panel ${picking ? "is-picking" : ""}`}
+      aria-label="Trip map"
+      id="trip-map"
+    >
+      <div className="map-topline">
+        <span className="map-place">
+          <Icon name="pin" size={16} />
+          {trip ? trip.request.destination.name : "Vancouver, BC"}
+        </span>
+        <span className="map-type">
+          {key ? "Google Maps" : "Route preview"}
+        </span>
+      </div>
+      {key ? (
+        <APIProvider apiKey={key} region="CA">
           <GoogleMap
-            defaultCenter={trip.request.destination.location}
+            defaultCenter={endpoints[1].location}
             defaultZoom={12}
             mapId={process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID"}
             gestureHandling="cooperative"
-            style={{ width: "100%", height: 360 }}
+            disableDefaultUI
+            clickableIcons={false}
+            zoomControl
+            streetViewControl={false}
+            style={{ width: "100%", height: "100%" }}
+            onClick={(event) => {
+              if (picking && event.detail.latLng) onPick(event.detail.latLng);
+            }}
           >
             <AdvancedMarker
-              position={trip.request.origin.location}
-              title={trip.request.origin.name}
+              position={trip?.request.origin.location ?? endpoints[0].location}
+              title={trip?.request.origin.name ?? endpoints[0].name}
             >
-              <Pin glyph="S" />
+              <span className="map-marker endpoint-marker">S</span>
             </AdvancedMarker>
-            {trip.stops.map((stop, index) => (
+            {trip?.stops.map((stop, index) => (
               <AdvancedMarker
                 key={stop.id}
                 position={stop.location}
                 title={stop.name}
+                onClick={() => onSelect(stop.id)}
+                zIndex={selectedId === stop.id ? 100 : index + 1}
               >
-                <Pin
-                  glyph={String(index + 1)}
-                  background="#146b55"
-                  glyphColor="#fff"
-                  borderColor="#146b55"
-                />
+                <span
+                  className={`map-marker ${selectedId === stop.id ? "selected" : ""}`}
+                >
+                  {index + 1}
+                </span>
               </AdvancedMarker>
             ))}
             <AdvancedMarker
-              position={trip.request.destination.location}
-              title={trip.request.destination.name}
+              position={
+                trip?.request.destination.location ?? endpoints[1].location
+              }
+              title={trip?.request.destination.name ?? endpoints[1].name}
             >
-              <Pin glyph="E" />
+              <span className="map-marker endpoint-marker">E</span>
             </AdvancedMarker>
-            <RouteOverlay trip={trip} />
+            <RouteOverlay
+              trip={trip}
+              selectedId={selectedId}
+              fitCount={fitCount}
+            />
           </GoogleMap>
-          {trip.source === "demo" && (
-            <p className="hint">
-              Sample stop connections, not navigation directions.
-            </p>
-          )}
+          <MapLoading />
         </APIProvider>
-      </section>
-    );
-  return (
-    <section className="map-panel route-preview" aria-label="Route preview">
-      <p className="eyebrow">
-        {trip
-          ? "Your route at a glance"
-          : "A little possibility, along the way"}
-      </p>
-      <h2>
-        {trip
-          ? `${trip.stops.length} reasons to take the scenic way.`
-          : "The journey can be the plan."}
-      </h2>
-      {trip ? (
-        <ol className="route-line">
-          <li>{trip.request.origin.name}</li>
-          {trip.stops.map((stop) => (
-            <li key={stop.id}>{stop.name}</li>
-          ))}
-          <li>{trip.request.destination.name}</li>
-        </ol>
       ) : (
-        <p>
-          Choose what you love. We’ll put the stops in order, with time to enjoy
-          them.
-        </p>
+        <RouteSketch trip={trip} selectedId={selectedId} onSelect={onSelect} />
       )}
-      <p className="hint">
-        Route overview · Interactive Google map appears when a browser Maps key
-        is configured.
-      </p>
+      {key && (
+        <button className="fit-map" onClick={() => setFitCount((n) => n + 1)}>
+          <Icon name="route" size={16} />
+          Fit route
+        </button>
+      )}
+      {picking && (
+        <div className="map-pick-banner">
+          Click the map to place your new stop.
+          <button onClick={onCancelPick} aria-label="Cancel map selection">
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
+      {selected && !picking && (
+        <div className="map-stop-detail">
+          <span className={`category-icon ${selected.category}`}>
+            <Icon name={selected.category} />
+          </span>
+          <div>
+            <strong>{selected.name}</strong>
+            <span>
+              {selected.durationMinutes} min · {selected.category}
+            </span>
+          </div>
+          <button
+            aria-label="Close map stop detail"
+            className="icon-button"
+            onClick={() => onSelect("")}
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
+      {key && trip?.source === "demo" && (
+        <span className="map-disclaimer">
+          Sample connections · not navigation directions
+        </span>
+      )}
     </section>
   );
 }

@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { CandidatePlace, TripRequest } from "@/types/trip";
 import { demoPlaces } from "./fixtures";
-import { dataMode, requireEnv } from "./server/env";
+import { mapsMode, requireEnv } from "./server/env";
 import { googlePost } from "./server/http";
 
 const responseSchema = z.object({
@@ -20,7 +20,7 @@ const responseSchema = z.object({
 export async function findPlaces(
   request: TripRequest,
 ): Promise<CandidatePlace[]> {
-  if (dataMode() === "demo")
+  if (mapsMode() === "demo")
     return demoPlaces.filter((place) =>
       request.activities.includes(place.category),
     );
