@@ -17,14 +17,19 @@ import { AddActivityDialog, AddStopDialog } from "./TripEditors";
 import { Icon } from "./Icon";
 import { formatTime } from "./StopCard";
 import { WeatherCard } from "./WeatherCard";
-import { TripChat } from "./TripChat";
+import { TripChat, type ChatMessage } from "./TripChat";
+import { SavedSchedule } from "./SavedSchedule";
+import type { ScheduleDocument } from "@/types/schedule";
 import { PlaceSearch } from "./PlaceSearch";
 import type { CandidatePlace } from "@/types/trip";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [notes, setNotes] = useState<string[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [savedDocument, setSavedDocument] = useState<ScheduleDocument | null>(
+    null,
+  );
   const [mapSearchOpen, setMapSearchOpen] = useState(false);
   const [pendingPlace, setPendingPlace] = useState<CandidatePlace | null>(null);
   const chatTrigger = useRef<HTMLButtonElement>(null);
@@ -39,6 +44,9 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [pickedLocation, setPickedLocation] = useState<Location | null>(null);
   const [picking, setPicking] = useState(false);
   const trip = state?.trip ?? null;
+  // A reopened schedule has no editable workspace, only its saved map snapshot.
+  const mapTrip =
+    trip ?? savedDocument?.schedule_runs[0]?.result.map_trip ?? null;
   function commit(next: WorkspaceTrip) {
     if (state) setHistory((previous) => [...previous.slice(-19), state]);
     setState(next);
@@ -158,7 +166,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
         ),
       )
     : 0;
-  const showItinerary = !!trip && itineraryOpen;
+  const showItinerary = (!!trip || !!savedDocument) && itineraryOpen;
   function closeChat() {
     setAssistantOpen(false);
     chatTrigger.current?.focus();
@@ -179,7 +187,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           <span className="workspace-mode">
             {mode === "demo" ? "Demo" : "Live"}
           </span>
-          {trip && !itineraryOpen && (
+          {(trip || savedDocument) && !itineraryOpen && (
             <button
               className="secondary"
               onClick={() => setItineraryOpen(true)}
@@ -218,7 +226,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
         </aside>
         <div className="map-canvas">
           <Map
-            trip={trip}
+            trip={mapTrip}
             selectedId={selectedId}
             onSelect={(id) => {
               selectStop(id);
@@ -286,8 +294,21 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           {assistantOpen && (
             <TripChat
               compact={showItinerary}
-              notes={notes}
-              onSend={(note) => setNotes((previous) => [...previous, note])}
+              messages={chatMessages}
+              onMessages={setChatMessages}
+              context={trip?.request ?? null}
+              busy={busy}
+              onBusy={setBusy}
+              onSaved={(document, workspace) => {
+                setSavedDocument(document);
+                setState(workspace);
+                setHistory([]);
+                setSelectedId(null);
+                setPicking(false);
+                setMessage(workspace?.trip.summary ?? "Schedule saved.");
+                setError("");
+                setItineraryOpen(true);
+              }}
               onClose={closeChat}
             />
           )}
@@ -331,6 +352,30 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             </div>
           )}
         </div>
+        {showItinerary && !trip && savedDocument && (
+          <aside className="itinerary-panel" aria-label="Itinerary panel">
+            <header className="itinerary-panel-header">
+              <div>
+                <h2>Saved schedule</h2>
+                <p>{savedDocument.schedule_items.length} activities</p>
+              </div>
+              <button
+                className="icon-button"
+                aria-label="Close itinerary"
+                title="Close itinerary"
+                onClick={() => setItineraryOpen(false)}
+              >
+                <Icon name="close" size={18} />
+              </button>
+            </header>
+            <div className="itinerary-scroll">
+              <SavedSchedule
+                document={savedDocument}
+                onClose={() => setSavedDocument(null)}
+              />
+            </div>
+          </aside>
+        )}
         {showItinerary && state && trip && (
           <aside className="itinerary-panel" aria-label="Itinerary panel">
             <header className="itinerary-panel-header">
@@ -350,6 +395,12 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               </button>
             </header>
             <div className="itinerary-scroll">
+              {savedDocument && (
+                <SavedSchedule
+                  document={savedDocument}
+                  onClose={() => setSavedDocument(null)}
+                />
+              )}
               <div className="schedule-status">
                 <Icon name="check" size={16} />
                 <span>

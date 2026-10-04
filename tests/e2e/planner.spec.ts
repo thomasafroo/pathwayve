@@ -267,9 +267,16 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
   await expect(page.locator(".stop")).toContainText("Sunset Cafe");
 });
 
-test("four planner states keep chat notes and resize when the itinerary opens", async ({
+test("four planner states keep chat messages and resize when the itinerary opens", async ({
   page,
 }, testInfo) => {
+  await page.route("**/api/schedules", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: [] })
+      : route.fulfill({
+          json: { clarification: "Which day should I plan lunch for?" },
+        }),
+  );
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/");
   const map = page.getByRole("region", { name: "Trip map", exact: true });
@@ -282,8 +289,9 @@ test("four planner states keep chat notes and resize when the itinerary opens", 
   const chat = page.getByRole("region", { name: "Trip chat", exact: true });
   expect((await chat.boundingBox())!.width).toBe(360);
   await page.getByLabel("Chat message").fill("Leave time for lunch");
-  await page.getByRole("button", { name: "Save message" }).click();
+  await page.getByRole("button", { name: "Send message" }).click();
   await expect(chat).toContainText("Leave time for lunch");
+  await expect(chat).toContainText("Which day should I plan lunch for?");
   await page.screenshot({ path: testInfo.outputPath("02-chat.png") });
   await page.getByRole("button", { name: "Load sample trip" }).click();
   await page.getByRole("button", { name: "Create itinerary" }).click();

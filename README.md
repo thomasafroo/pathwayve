@@ -2,7 +2,7 @@
 
 A desktop trip planner for choosing your own places, exploring ranked suggestions,
 and adapting your itinerary. Built with Next.js, React, TypeScript, Google Maps,
-and validated JSON contracts for future Gemini integration.
+and a Gemini prompt-to-JSON-to-SQL schedule pipeline.
 
 ## Run locally
 
@@ -51,10 +51,16 @@ deterministic “what to bring” advice.
 - Weather-based clothing/accessory advice when live weather is enabled.
 - Runtime validation, unit/provider tests, and desktop browser tests.
 
-Gemini suggestions, multi-day overnight planning, persistent accounts/favourites,
-weather-aware route optimization, and active-trip navigation are future features.
-Ranking uses a transparent heuristic; it does not claim personalized AI
-recommendations.
+The bottom-centered **Plan & save** composer uses Gemini to generate a structured
+schedule, resolves locations/routes, and stores it in SQL. Open saved schedules
+from the composer after refreshing. Set `GEMINI_API_KEY`; local development uses
+embedded PostgreSQL automatically, or set `DATABASE_URL` / `TIGER_DATABASE_URL`
+and run `npm run db:migrate`. See [AI schedules](docs/AI-SCHEDULES.md) for contracts,
+database setup, anonymous browser ownership, and verification limits.
+
+Multi-day overnight planning, persistent accounts/favourites, weather-aware route
+optimization, and active-trip navigation are future features. Ranking uses a
+transparent heuristic; it does not claim personalized AI recommendations.
 
 See [frontend and API setup](docs/FRONTEND.md), [architecture](docs/ARCHITECTURE.md),
 and [team workflow](CONTRIBUTING.md).
