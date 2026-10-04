@@ -632,8 +632,8 @@ export function TripForm({
             </select>
           </label>
           <div className="time-fields">
-            <label>
-              Departure
+            <label className="time-field">
+              <span className="time-field-label">Departure</span>
               <input
                 aria-describedby="time-help"
                 value={startValue}
@@ -642,8 +642,8 @@ export function TripForm({
                 type="datetime-local"
               />
             </label>
-            <label>
-              Finish by
+            <label className="time-field">
+              <span className="time-field-label">Finish by</span>
               <input
                 aria-describedby="time-help"
                 value={endValue}

@@ -418,20 +418,45 @@ body {
   grid-template-columns: 1fr;
   gap: 8px;
 }
-.maps-workspace .time-fields label {
-  display: flex;
+.maps-workspace .time-field {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
-  font-size: 11px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.maps-workspace .time-field-label {
+  line-height: 1.25;
 }
 .maps-workspace .time-fields input {
-  width: 205px;
-  flex: 1;
+  width: 100%;
   margin: 0;
-  padding: 8px 6px;
-  font-size: 11px;
-  min-height: 38px;
+  min-height: 40px;
+  border-color: #dce4dd;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  box-shadow: 0 1px 2px #243c3408;
+}
+.maps-workspace .time-fields input:focus {
+  border-color: color-mix(in srgb, var(--green) 42%, #dce4dd);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--green) 12%, transparent),
+    0 1px 2px #243c3408;
+}
+.maps-workspace .time-fields input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.7;
+}
+.maps-workspace .time-fields input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
 }
 .maps-workspace .form-divider {
   margin: 16px 0;
@@ -1114,9 +1139,6 @@ body {
   .route-summary span {
     font-size: 9px;
   }
-  .maps-workspace .time-fields input {
-    width: 168px;
-  }
 }
 @media (max-width: 1000px) and (min-width: 761px) {
   .has-itinerary .map-workspace-main {
@@ -1198,6 +1220,10 @@ body {
   }
   .maps-workspace .time-fields {
     grid-template-columns: 1fr;
+  }
+  .maps-workspace .time-field {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
   .maps-workspace .time-fields input {
     width: auto;
