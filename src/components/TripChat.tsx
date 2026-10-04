@@ -36,14 +36,27 @@ export function TripChat({
   const [showSaved, setShowSaved] = useState(false);
   const [ready, setReady] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   // Clarification turns sent back to Gemini with the next prompt.
   const [conversation, setConversation] = useState<string[]>([]);
   const requestId = useRef<string | null>(null);
   const sending = useRef(false);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const chunks = useRef<Blob[]>([]);
+  const unmounted = useRef(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
   }, [messages, error]);
+  useEffect(() => {
+    return () => {
+      unmounted.current = true;
+      if (recorder.current?.state !== "inactive") recorder.current?.stop();
+      stream.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
   useEffect(() => {
     let active = true;
     fetch("/api/schedules")
@@ -68,7 +81,7 @@ export function TripChat({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (busy || sending.current || !text || !ready) return;
+    if (busy || transcribing || sending.current || !text || !ready) return;
     sending.current = true;
     onBusy(true);
     setPlanning(true);
@@ -145,6 +158,79 @@ export function TripChat({
       sending.current = false;
       setPlanning(false);
       onBusy(false);
+    }
+  }
+  async function transcribe(audio: Blob) {
+    setTranscribing(true);
+    setError("");
+    try {
+      const form = new FormData();
+      form.append(
+        "audio",
+        audio,
+        `pathwayve-voice.${audio.type.includes("mp4") ? "m4a" : "webm"}`,
+      );
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        body: form,
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error?.message || "Voice transcription failed.");
+      const text = String(data.text || "").trim();
+      if (!text) throw new Error("No speech was detected.");
+      setDraft((current) => [current.trim(), text].filter(Boolean).join(" "));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Voice transcription failed.",
+      );
+    } finally {
+      setTranscribing(false);
+    }
+  }
+  function stopRecording() {
+    if (recorder.current?.state !== "inactive") recorder.current?.stop();
+  }
+  async function toggleRecording() {
+    if (recording) {
+      stopRecording();
+      return;
+    }
+    if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") {
+      setError("Voice input is not supported in this browser.");
+      return;
+    }
+    setError("");
+    try {
+      chunks.current = [];
+      const nextStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      stream.current = nextStream;
+      const nextRecorder = new MediaRecorder(nextStream);
+      recorder.current = nextRecorder;
+      nextRecorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size) chunks.current.push(event.data);
+      });
+      nextRecorder.addEventListener("stop", () => {
+        if (unmounted.current) return;
+        setRecording(false);
+        stream.current?.getTracks().forEach((track) => track.stop());
+        stream.current = null;
+        const audio = new Blob(chunks.current, {
+          type: nextRecorder.mimeType || "audio/webm",
+        });
+        chunks.current = [];
+        if (audio.size) void transcribe(audio);
+      });
+      nextRecorder.start();
+      setRecording(true);
+    } catch (err) {
+      setError(
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Allow microphone access to use voice input."
+          : "Could not start voice input.",
+      );
     }
   }
   async function load(id: string) {
@@ -260,6 +346,9 @@ export function TripChat({
         {planning && (
           <p className="chat-message assistant pending">Planning…</p>
         )}
+        {transcribing && (
+          <p className="chat-message assistant pending">Transcribing…</p>
+        )}
         {error && (
           <p className="chat-error" role="alert">
             {error}
@@ -274,17 +363,30 @@ export function TripChat({
           placeholder="Describe your day"
           maxLength={4000}
           value={draft}
-          disabled={busy}
+          disabled={busy || transcribing}
           onChange={(event) => {
             setDraft(event.target.value);
             requestId.current = null;
           }}
         />
         <button
+          type="button"
+          className={`voice-button ${recording ? "recording" : ""}`}
+          disabled={busy || transcribing}
+          aria-label={recording ? "Stop voice input" : "Start voice input"}
+          title={recording ? "Stop voice input" : "Start voice input"}
+          aria-pressed={recording}
+          onClick={() => void toggleRecording()}
+        >
+          <Icon name={recording ? "close" : "mic"} size={15} />
+        </button>
+        <button
           type="submit"
-          disabled={!ready || busy || !draft.trim()}
+          disabled={!ready || busy || transcribing || !draft.trim()}
           aria-label="Send message"
-          title="Generate and save schedule"
+          title={
+            transcribing ? "Transcribing voice" : "Generate and save schedule"
+          }
         >
           <Icon name="send" size={15} />
         </button>
