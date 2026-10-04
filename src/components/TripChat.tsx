@@ -56,6 +56,10 @@ export function TripChat({
     end.current?.scrollIntoView({ block: "nearest" });
   }, [messages, error]);
   useEffect(() => {
+    // React Strict Mode runs this effect's cleanup once during development.
+    // Reset the flag when the effect is active so completed recordings are not
+    // mistaken for events from an unmounted component.
+    unmounted.current = false;
     return () => {
       unmounted.current = true;
       if (stopFallback.current) clearTimeout(stopFallback.current);
@@ -212,16 +216,26 @@ export function TripChat({
       chunks.current = [];
       return;
     }
-    currentRecorder.requestData();
-    currentRecorder.stop();
+    try {
+      currentRecorder.requestData();
+      currentRecorder.stop();
+    } catch {
+      stream.current?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+      recorder.current = null;
+      chunks.current = [];
+      setError("Could not finish voice input. Try again.");
+      return;
+    }
     stopFallback.current = setTimeout(() => {
       if (recorder.current === currentRecorder) {
         stream.current?.getTracks().forEach((track) => track.stop());
         stream.current = null;
         recorder.current = null;
         chunks.current = [];
+        setError("Could not finish voice input. Try again.");
       }
-    }, 1500);
+    }, 3000);
   }
   function monitorSilence(nextStream: MediaStream) {
     const AudioContextClass =
@@ -242,7 +256,7 @@ export function TripChat({
       const volume =
         samples.reduce((sum, sample) => sum + Math.abs(sample - 128), 0) /
         samples.length;
-      if (volume > 7) {
+      if (volume > 3) {
         heardSpeech = true;
         silentSince = 0;
       } else if (heardSpeech) silentSince ||= performance.now();
@@ -275,9 +289,11 @@ export function TripChat({
         if (event.data.size) chunks.current.push(event.data);
       });
       nextRecorder.addEventListener("stop", () => {
-        if (unmounted.current) return;
         if (stopFallback.current) clearTimeout(stopFallback.current);
-        setRecording(false);
+        if (maxRecordingTimer.current) clearTimeout(maxRecordingTimer.current);
+        if (silenceFrame.current) cancelAnimationFrame(silenceFrame.current);
+        void audioContext.current?.close();
+        audioContext.current = null;
         stream.current?.getTracks().forEach((track) => track.stop());
         stream.current = null;
         recorder.current = null;
@@ -285,9 +301,19 @@ export function TripChat({
           type: nextRecorder.mimeType || "audio/webm",
         });
         chunks.current = [];
+        if (unmounted.current) return;
+        setRecording(false);
+        setListening(false);
         if (audio.size) void transcribe(audio);
+        else setError("No audio was captured. Try again.");
       });
-      nextRecorder.start();
+      nextRecorder.addEventListener("error", () => {
+        stopRecording();
+        setError("Voice recording failed. Try again.");
+      });
+      // A timeslice ensures audio is available even when a browser delays the
+      // final dataavailable event until recording has fully stopped.
+      nextRecorder.start(250);
       setRecording(true);
       setListening(true);
       monitorSilence(nextStream);
