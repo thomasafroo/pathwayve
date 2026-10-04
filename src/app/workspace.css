@@ -1335,3 +1335,20 @@ body {
   font-size: 12px;
   line-height: 1.5;
 }
+
+.saved-route {
+  margin: 12px 0;
+}
+.saved-route h3 {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.saved-route .saved-route-endpoints {
+  padding-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.maps-workspace .saved-route .travel-leg {
+  padding: 4px 0 10px 12px;
+  border-bottom: 1px solid #edf1ed;
+}

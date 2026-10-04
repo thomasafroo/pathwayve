@@ -398,6 +398,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               {savedDocument && (
                 <SavedSchedule
                   document={savedDocument}
+                  showRoute={false}
                   onClose={() => setSavedDocument(null)}
                 />
               )}

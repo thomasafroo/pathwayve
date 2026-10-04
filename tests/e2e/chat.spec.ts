@@ -45,6 +45,24 @@ const document = {
           stops: [],
           legs: [
             {
+              from: "Saved origin",
+              to: "Saved destination",
+              durationMinutes: 25,
+              distanceMeters: 8200,
+              mode: "transit",
+              steps: [
+                {
+                  instruction: "Walk to Burrard Station",
+                  mode: "WALK",
+                  durationMinutes: 4,
+                },
+                {
+                  instruction: "Ride toward UBC",
+                  mode: "TRANSIT",
+                  durationMinutes: 21,
+                  line: "99 B-Line",
+                },
+              ],
               path: [
                 { lat: 49.28, lng: -123.1 },
                 { lat: 49.26, lng: -123.2 },
@@ -97,6 +115,11 @@ test("chat panel sends prompt, saves, and reopens after refresh", async ({
   await expect(
     page.getByRole("region", { name: "Saved schedule details" }),
   ).toContainText("Not scheduled: Choose a quiet place");
+  const route = page.getByRole("region", { name: "Route directions" });
+  await expect(route).toContainText("Saved origin → Saved destination");
+  await expect(route).toContainText("25 min on transit");
+  await route.getByText("View directions").click();
+  await expect(route).toContainText("99 B-Line Ride toward UBC · 21 min");
   expect(requestBody.prompt).toBe(
     "User: Coffee then study tomorrow from SFU to downtown.",
   );

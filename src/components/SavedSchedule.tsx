@@ -1,15 +1,21 @@
 "use client";
+import { Fragment } from "react";
 import type { ScheduleDocument } from "@/types/schedule";
+import { TravelLeg } from "./TravelLeg";
 
 export function SavedSchedule({
   document,
   onClose,
+  showRoute = true,
 }: {
   document: ScheduleDocument;
   onClose: () => void;
+  // Off when the editable itinerary below already shows the same legs.
+  showRoute?: boolean;
 }) {
   const schedule = document.schedules[0],
     run = document.schedule_runs[0];
+  const mapTrip = run.result.map_trip;
   const time = (iso: string) =>
     new Intl.DateTimeFormat(undefined, {
       timeZone: schedule.time_zone,
@@ -73,6 +79,24 @@ export function SavedSchedule({
           );
         })}
       </ol>
+      {showRoute && mapTrip && mapTrip.legs.length > 0 && (
+        <section className="saved-route" aria-label="Route directions">
+          <h3>Route</h3>
+          <ol className="stops">
+            {mapTrip.legs.map((leg, index) => (
+              <Fragment key={index}>
+                <li className="saved-route-endpoints">
+                  {leg.from} → {leg.to}
+                </li>
+                <TravelLeg
+                  leg={leg}
+                  mode={leg.mode ?? mapTrip.request.transportation}
+                />
+              </Fragment>
+            ))}
+          </ol>
+        </section>
+      )}
       {run.result.warnings.map((warning) => (
         <p className="hint" key={warning}>
           {warning}
