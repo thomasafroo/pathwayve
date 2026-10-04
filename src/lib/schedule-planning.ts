@@ -17,11 +17,17 @@ import { searchPlaces } from "./place-search";
 import { computeScheduleLeg } from "./schedule-routing";
 import { mapsMode } from "./server/env";
 import { AppError } from "./server/http";
+import type { PlanningConstraints } from "@/types/planning-constraints";
+import { enforceScheduleConstraints } from "./schedule-constraints";
+import { optimizeStopOrder } from "./stop-order";
+import { discoverRoutePlace, traceRoute } from "./route-discovery";
 
 export async function materializeSchedule(
   draft: GeneratedSchedule,
   owner: string,
+  constraints?: PlanningConstraints | null,
 ): Promise<{ document: ScheduleDocument; workspace: WorkspaceTrip | null }> {
+  draft = enforceScheduleConstraints(draft, constraints);
   const intent = draft.schedules[0];
   if (!intent)
     throw new AppError(
@@ -44,9 +50,23 @@ export async function materializeSchedule(
     });
     return response.places[0] ?? null;
   };
+  const endpointPlace = (
+    endpoint: NonNullable<PlanningConstraints["origin"]>,
+  ): CandidatePlace => ({
+    id:
+      endpoint.placeId ??
+      `coordinate:${endpoint.location.lat},${endpoint.location.lng}`,
+    name: endpoint.name,
+    location: endpoint.location,
+    category: "attraction",
+  });
   const [origin, destination] = await Promise.all([
-    find(intent.origin_query),
-    find(intent.destination_query),
+    constraints?.origin
+      ? endpointPlace(constraints.origin)
+      : find(intent.origin_query),
+    constraints?.destination
+      ? endpointPlace(constraints.destination)
+      : find(intent.destination_query),
   ]);
   if (!origin || !destination)
     throw new AppError(
@@ -78,10 +98,20 @@ export async function materializeSchedule(
     place_id: null,
   }));
   const places = new Map<string, CandidatePlace>();
-  // Preserve every intention, including tasks with no assigned place.
-  for (const item of items) {
-    if (item.place_query) {
-      const place = await find(item.place_query, destination.location);
+  const genericIds = new Set<string>();
+  // Sidebar provider IDs/coordinates are authoritative: never search their names again.
+  for (const [index, item] of items.entries()) {
+    const model = draft.schedule_items[index];
+    const chosen = constraints?.selectedStops.find(
+      (stop) => stop.id === model.selected_stop_id,
+    );
+    if (chosen) {
+      item.place_id = chosen.id;
+      places.set(item.id, chosen);
+    } else if (item.place_query && model.location_scope === "along_route") {
+      genericIds.add(item.id);
+    } else if (item.place_query) {
+      const place = await find(item.place_query);
       if (place) {
         item.place_id = place.id;
         places.set(item.id, place);
@@ -105,7 +135,11 @@ export async function materializeSchedule(
     transportation: intent.transportation,
     activities: [],
     preferences: intent.preferences.notes,
-    routingPriority: intent.preferences.routing_priority,
+    orderPolicy: intent.preferences.order_policy,
+    routingPriority:
+      intent.preferences.order_policy === "optimize"
+        ? ("fastest" as const)
+        : intent.preferences.routing_priority,
     budget: intent.preferences.budget,
   };
   const result: RunResult = {
@@ -115,9 +149,93 @@ export async function materializeSchedule(
     destination_arrival_at: null,
     warnings: [],
   };
-  const ordered = [...items].sort(
+  let ordered = [...items].sort(
     (a, b) => (a.preferred_sequence ?? 100) - (b.preferred_sequence ?? 100),
   );
+  if (request.orderPolicy === "optimize") {
+    const resolved = ordered.filter((item) => places.has(item.id));
+    if (
+      resolved.length <= 6 &&
+      resolved.every((item) => item.kind === "visit")
+    ) {
+      const optimized = await optimizeStopOrder(
+        resolved,
+        (item) => item.order_locked,
+        (order) =>
+          traceRoute(
+            origin,
+            destination,
+            order.map((item) => ({ item, place: places.get(item.id)! })),
+            request,
+          ),
+      );
+      const queue = [...optimized.order];
+      ordered = ordered.map((item) =>
+        places.has(item.id) ? queue.shift()! : item,
+      );
+      ordered.forEach((item, index) => {
+        if (!item.order_locked) item.preferred_sequence = index;
+      });
+      result.warnings.push(
+        optimized.result
+          ? `Compared ${optimized.evaluated} stop orders using ${mapsMode() === "live" ? "Google Routes travel times" : "demo estimates"}. Chose the earliest feasible arrival among these orders; larger trips use a bounded search.`
+          : "No feasible optimized order found; the original order is checked below.",
+      );
+    } else
+      result.warnings.push(
+        "Stop-order optimization is available for up to six resolved visits. Task schedules retain their sequence.",
+      );
+  }
+  const discoveryProblems = new Map<string, string>();
+  if (genericIds.size) {
+    const pending = ordered.filter((item) => genericIds.has(item.id));
+    ordered = ordered.filter((item) => !genericIds.has(item.id));
+    for (const item of pending) {
+      try {
+        const anchors = ordered.flatMap((existing) => {
+          const place = places.get(existing.id);
+          const unverifiedTask =
+            existing.kind === "task" &&
+            Object.values(existing.requirements).some(Boolean);
+          return place && !unverifiedTask ? [{ place, item: existing }] : [];
+        });
+        const addition = await discoverRoutePlace({
+          query: item.place_query!,
+          item,
+          origin,
+          destination,
+          anchors,
+          request,
+          radiusMeters: constraints?.routeRadiusMeters ?? 1000,
+        });
+        if (addition) {
+          item.place_id = addition.place.id;
+          places.set(item.id, addition.place);
+          const before = anchors[addition.index]?.item;
+          const insertionIndex = before
+            ? ordered.findIndex((i) => i.id === before.id)
+            : ordered.length;
+          ordered.splice(insertionIndex, 0, item);
+        } else {
+          discoveryProblems.set(
+            item.id,
+            `No feasible match found within ${constraints?.routeRadiusMeters ?? 1000} m of the route that preserves existing stops, their times, and the chosen travel mode.`,
+          );
+        }
+      } catch (error) {
+        discoveryProblems.set(
+          item.id,
+          error instanceof AppError
+            ? error.message
+            : "Route-area discovery failed. Your selected places are preserved.",
+        );
+      }
+    }
+    ordered.push(...pending.filter((item) => !places.has(item.id)));
+    ordered.forEach((item, index) => {
+      if (!item.order_locked) item.preferred_sequence = index;
+    });
+  }
   const unavailable = (item: SavedItem, code: string, reason: string) =>
     result.unscheduled_items.push({
       item_id: item.id,
@@ -166,8 +284,9 @@ export async function materializeSchedule(
       if (!place) {
         unavailable(
           item,
-          "NEEDS_PLACE",
-          "Saved for later: choose a place for this activity.",
+          discoveryProblems.has(item.id) ? "NO_ROUTE_MATCH" : "NEEDS_PLACE",
+          discoveryProblems.get(item.id) ??
+            "Saved for later: choose a place for this activity.",
         );
         continue;
       }

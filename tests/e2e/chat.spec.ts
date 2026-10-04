@@ -185,3 +185,126 @@ test("clarifications retain the original request and failures can be retried", a
   expect(requests[1].prompt).toContain("yes");
   expect(requests[2].requestId).toBe(requests[1].requestId);
 });
+
+test("chat uses current sidebar stops and mode before a manual trip is created", async ({
+  page,
+}) => {
+  const requests: {
+    constraints: import("../../src/types/planning-constraints").PlanningConstraints;
+    requestId: string;
+  }[] = [];
+  await page.route("**/api/schedules", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: [] });
+    requests.push(route.request().postDataJSON());
+    return route.fulfill({
+      status: 502,
+      json: { error: { message: "Test retry" } },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  await page.getByRole("button", { name: "Drive", exact: true }).click();
+  await page.getByLabel("Search distance from route").selectOption("500");
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T13:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T18:00");
+  const chat = await openChat(page);
+  await chat
+    .getByLabel("Chat message")
+    .fill("Add a coffee shop along this route.");
+  await chat.getByRole("button", { name: "Send message" }).click();
+  await expect(chat.getByRole("alert")).toHaveText("Test retry");
+  expect(requests[0].constraints.transportation).toBe("driving");
+  expect(requests[0].constraints.selectedStops).toHaveLength(4);
+  expect(requests[0].constraints.origin?.name).toBe("SFU Burnaby");
+  expect(requests[0].constraints.routeRadiusMeters).toBe(500);
+  expect(requests[0].constraints.startTime).toBeTruthy();
+  await page
+    .getByRole("button", { name: "Move The Morning Cup down", exact: true })
+    .click();
+  await expect(page.getByLabel("Stop order", { exact: true })).toHaveValue(
+    "preserve",
+  );
+  await page.getByLabel("Stop order", { exact: true }).selectOption("optimize");
+  await page.getByRole("button", { name: "Walk", exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: "Remove selected The Morning Cup",
+      exact: true,
+    })
+    .click();
+  await chat.getByRole("button", { name: "Send message" }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(requests[1].constraints.orderPolicy).toBe("optimize");
+  expect(requests[1].constraints.routingPriority).toBe("fastest");
+  expect(requests[1].constraints.transportation).toBe("walking");
+  expect(requests[1].constraints.selectedStops).toHaveLength(3);
+  expect(requests[1].requestId).not.toBe(requests[0].requestId);
+});
+
+test("chat input grows for wrapped text and newlines, then shrinks", async ({
+  page,
+}) => {
+  await page.route("**/api/schedules", (route) => route.fulfill({ json: [] }));
+  await page.goto("/");
+  const chat = await openChat(page);
+  const input = chat.getByLabel("Chat message");
+  const initial = (await input.boundingBox())!.height;
+  await input.fill(
+    "Find a coffee shop along the route and leave time for a walk. ".repeat(8),
+  );
+  await expect
+    .poll(async () => (await input.boundingBox())!.height)
+    .toBeGreaterThan(initial);
+  await input.fill("First stop");
+  await input.press("End");
+  await input.press("Shift+Enter");
+  await input.pressSequentially("Second stop");
+  await expect(input).toHaveValue("First stop\nSecond stop");
+  await expect
+    .poll(async () => (await input.boundingBox())!.height)
+    .toBeGreaterThan(initial);
+  await input.fill("Many lines\n".repeat(25));
+  await expect
+    .poll(async () => (await input.boundingBox())!.height)
+    .toBeLessThanOrEqual(160);
+  await input.fill("");
+  await expect
+    .poll(async () => (await input.boundingBox())!.height)
+    .toBe(initial);
+});
+
+test("map enters and exits fullscreen and supports embedded-browser fallback", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Enter fullscreen", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Exit fullscreen", exact: true }),
+  ).toBeVisible();
+  const map = page.getByRole("region", { name: "Trip map", exact: true });
+  await expect
+    .poll(async () => Math.round((await map.boundingBox())!.width))
+    .toBe(page.viewportSize()!.width);
+  await page
+    .getByRole("button", { name: "Exit fullscreen", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Enter fullscreen", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    HTMLElement.prototype.requestFullscreen = async () => {
+      throw new Error("Blocked in embedded browser");
+    };
+  });
+  await page
+    .getByRole("button", { name: "Enter fullscreen", exact: true })
+    .click();
+  await expect(map).toHaveClass(/map-fullscreen/);
+  await page.keyboard.press("Escape");
+  await expect(map).not.toHaveClass(/map-fullscreen/);
+  await expect(
+    page.getByRole("button", { name: "Enter fullscreen", exact: true }),
+  ).toBeFocused();
+});

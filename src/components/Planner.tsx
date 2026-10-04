@@ -7,9 +7,10 @@ import {
   applyModifications,
   createWorkspace,
   receiveReplan,
+  validateWorkspace,
 } from "@/lib/trip-workspace";
 import { tripClient } from "@/lib/trip-client";
-import { TripForm } from "./TripForm";
+import { TripForm, type TripFormHandle } from "./TripForm";
 import { Map } from "./Map";
 import { Itinerary } from "./Itinerary";
 import { ReplanControls } from "./ReplanControls";
@@ -24,6 +25,7 @@ import { PlaceSearch } from "./PlaceSearch";
 import type { CandidatePlace } from "@/types/trip";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
+  const tripForm = useRef<TripFormHandle>(null);
   const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -94,9 +96,17 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     setBusy(true);
     setError("");
     try {
-      const next = createWorkspace(await tripClient.plan(request));
-      setState(next);
-      setHistory([]);
+      const planned = await tripClient.plan(request);
+      const next = state
+        ? validateWorkspace({
+            trip: { ...planned, id: state.trip.id },
+            version: state.version + 1,
+            activities: state.activities.filter((activity) =>
+              planned.stops.some((stop) => stop.id === activity.stopId),
+            ),
+          })
+        : createWorkspace(planned);
+      commit(next);
       setSelectedId(null);
       setPicking(false);
       setMessage(next.trip.summary);
@@ -201,6 +211,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
         <aside className="directions-panel" aria-label="Trip planning panel">
           <div className="panel-content">
             <TripForm
+              ref={tripForm}
               busy={busy}
               onPlan={onPlan}
               mode={mode}
@@ -209,19 +220,21 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             />
           </div>
           <div className="plan-submit">
-            <button
-              type="submit"
-              form="trip-planner-form"
-              className="primary"
-              disabled={busy}
-            >
-              <Icon name="route" size={18} />
+            <p aria-live="polite">
               {busy
-                ? "Updating route..."
-                : trip
-                  ? "Update route"
-                  : "Create itinerary"}
-            </button>
+                ? "Updating route…"
+                : "Routes update automatically as you edit."}
+            </p>
+            {error && (
+              <button
+                type="submit"
+                form="trip-planner-form"
+                className="secondary"
+                disabled={busy}
+              >
+                Retry route update
+              </button>
+            )}
           </div>
         </aside>
         <div className="map-canvas">
@@ -256,23 +269,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                   label="Search map places"
                   disabled={busy}
                   near={trip?.request.destination.location}
-                  onSelect={async (place) => {
-                    if (trip) {
-                      const added = await modify({
-                        type: "ADD_STOP",
-                        index: trip.stops.length,
-                        stop: {
-                          ...place,
-                          durationMinutes: 30,
-                          locked: false,
-                          arrivalTime: trip.request.startTime,
-                          reason: "Selected by you.",
-                          priority: "required",
-                        },
-                      });
-                      if (!added) return;
-                      setItineraryOpen(true);
-                    } else setPendingPlace(place);
+                  onSelect={(place) => {
+                    setPendingPlace({ ...place });
                     setMapSearchOpen(false);
                   }}
                 />
@@ -297,6 +295,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               messages={chatMessages}
               onMessages={setChatMessages}
               context={trip?.request ?? null}
+              getConstraints={() => tripForm.current?.getConstraints() ?? null}
               busy={busy}
               onBusy={setBusy}
               onSaved={(document, workspace) => {

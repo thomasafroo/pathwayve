@@ -113,3 +113,67 @@ unscheduled tasks, failed routes, SQL round trips, ownership isolation, paramete
 values, transactional rollback, and duplicate saves. PGlite tests execute real
 PostgreSQL SQL in memory. Browser tests cover composer placement, submission,
 clarifications, retries, and reopening saved results with mocked external responses.
+
+## Sidebar constraints and route-area discovery
+
+Chat reads the current left-panel form when Send is pressed, even before Create
+itinerary. `POST /api/schedules` now accepts `constraints` alongside the older
+`context` hint. Constraints include selected provider IDs/coordinates, stay times,
+endpoints, transportation, routing priority, explicit dates, preferences, and
+`routeRadiusMeters` (default 1,000 m; UI offers 500 m, 1 km, or 3 km).
+
+Sidebar choices take precedence over Gemini. The server re-inserts omitted stops,
+sets their priority to required, and uses their coordinates directly rather than
+searching for their names. Remove/change a sidebar choice to override it. An
+impossible required visit stays in the saved intentions and makes the run
+infeasible; it is never silently downgraded. Blank dates remain for Gemini to
+interpret; explicitly selected dates are enforced. Changing sidebar constraints
+between retries starts a new request ID rather than reopening an older result.
+
+Gemini must classify each item with `location_scope: specific | along_route` and
+`selected_stop_id: string | null`. Specific named locations bypass the route-radius
+filter. Generic queries retain their category intent rather than a model-invented
+venue name. The server computes a baseline route through existing places, samples
+up to five points on its provider geometry, searches Places, and filters candidates
+by distance to the actual route segments. It evaluates up to three nearby candidates
+with complete Routes journeys in the selected mode, including appointment waits and
+visit durations, then chooses the feasible candidate with the earliest final arrival.
+No candidate is added when that would displace an existing visit or violate the end
+time. Transit legs are recalculated at their scheduled departure times.
+
+Discovery is bounded, not exhaustive or globally optimal. The radius measures
+geographic distance to the route; it is not a walking-time promise. Routes determine
+actual travel feasibility. An unsuccessful generic search remains unscheduled with
+`NO_ROUTE_MATCH`. Exact venue interpretation still depends on Gemini classification
+and Places matching. No automatic widening beyond the chosen radius is performed.
+The added intent classification fields do not change SQL columns; resolved IDs,
+required status, placements, and provider geometry use the existing persistence model.
+
+Sidebar stop order uses `orderPolicy: preserve | optimize` in manual requests
+and chat constraints (omitted means preserve). Up/down controls switch to
+preserve. The selected relative sequence is enforced while generic additions
+may fit between selections. Individually locked positions cannot be moved.
+Saved schedule preferences persist this as `order_policy`.
+
+Optimize forces fastest routing and compares complete timed journeys, including
+stop dwell and transit departure times, before route-corridor discovery. All
+free permutations are checked for at most three free stops; larger trips compare
+at most 12 orders (original, reverse and relocation candidates). This is a bounded
+search, not a global optimum guarantee. Appointments and end times are checked
+for AI schedules; unresolved/task schedules may retain their sequence with a
+warning. Demo data still uses explicitly labeled estimates. Real mode uses
+Google Routes legs; no straight-line ranking selects the winning order.
+
+Manual sidebar edits now debounce route updates by 600 ms. Stop drag handles
+and arrows share the same lock checks and switch to preserved order. Endpoint,
+mode, duration, and optimization changes also recalculate automatically; search
+keystrokes alone do not. Controls pause during route/AI requests to prevent
+competing results. Applying a saved AI response or undo does not trigger a
+second automatic plan. Chat remains explicit and reads the latest sidebar;
+manual updates do not call Gemini or rewrite saved SQL snapshots.
+
+Successful manual plans have a tab-local cache of at most 20 request versions,
+expiring after 60 seconds. Identical pending requests are coalesced; failures
+are not cached. Working history remains available through Undo. Activities on
+retained stops survive route recalculation and are validated against stop dwell
+time. Failed calculations retain the last successful map and show an error.

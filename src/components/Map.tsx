@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   APIProvider,
   Map as GoogleMap,
@@ -263,13 +263,52 @@ function RouteSketch({
 export function Map(props: MapProps) {
   const { trip, selectedId, onSelect, picking, onPick, onCancelPick } = props;
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const panel = useRef<HTMLElement>(null);
+  const fullscreenButton = useRef<HTMLButtonElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      setFullscreen(document.fullscreenElement === panel.current);
+      if (!document.fullscreenElement) fullscreenButton.current?.focus();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && fullscreen && !document.fullscreenElement) {
+        setFullscreen(false);
+        fullscreenButton.current?.focus();
+      }
+    };
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [fullscreen]);
+  async function toggleFullscreen() {
+    if (document.fullscreenElement === panel.current) {
+      await document.exitFullscreen();
+    } else if (fullscreen) {
+      setFullscreen(false);
+      fullscreenButton.current?.focus();
+    } else {
+      try {
+        if (!panel.current?.requestFullscreen)
+          throw new Error("Fullscreen unavailable");
+        await panel.current.requestFullscreen();
+      } catch {
+        // Embedded browsers may block native fullscreen; expand within the window.
+        setFullscreen(true);
+      }
+    }
+  }
   const [fitCount, setFitCount] = useState(0);
   const location = useLiveLocation();
   const [follow, setFollow] = useState(true);
   const selected = trip?.stops.find((s) => s.id === selectedId);
   return (
     <section
-      className={`map-panel ${picking ? "is-picking" : ""}`}
+      ref={panel}
+      className={`map-panel ${picking ? "is-picking" : ""} ${fullscreen ? "map-fullscreen" : ""}`}
       aria-label="Trip map"
       id="trip-map"
     >
@@ -342,9 +381,20 @@ export function Map(props: MapProps) {
       ) : (
         <RouteSketch trip={trip} selectedId={selectedId} onSelect={onSelect} />
       )}
+      <button
+        ref={fullscreenButton}
+        className="fit-map"
+        type="button"
+        aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        aria-pressed={fullscreen}
+        onClick={() => void toggleFullscreen()}
+      >
+        <Icon name={fullscreen ? "close" : "fit"} size={18} />
+      </button>
       {key && (
         <button
-          className="fit-map"
+          className="fit-map route-fit-control"
           aria-label="Fit route"
           title="Fit route"
           onClick={() => {
@@ -352,7 +402,7 @@ export function Map(props: MapProps) {
             setFitCount((n) => n + 1);
           }}
         >
-          <Icon name="fit" size={18} />
+          <Icon name="locate" size={18} />
         </button>
       )}
       <div className="location-controls">

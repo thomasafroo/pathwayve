@@ -136,3 +136,32 @@ it("returns missing-key configuration without calling Gemini", async () => {
   });
   expect(generateContent).not.toHaveBeenCalled();
 });
+
+it("sends sidebar constraints separately and requires route-vs-specific classification", async () => {
+  generateContent.mockResolvedValue({ text: JSON.stringify(scheduleIntent()) });
+  const { planningConstraintsSchema } =
+    await import("@/types/planning-constraints");
+  const constraints = planningConstraintsSchema.parse({
+    origin: null,
+    destination: null,
+    transportation: "transit",
+    selectedStops: [],
+    timeZone: "America/Vancouver",
+    routingPriority: "less_walking",
+    budget: "any",
+    activities: [],
+    interestTags: [],
+    preferences: "",
+  });
+  await generateSchedule({ ...request, constraints });
+  const call = generateContent.mock.calls[0][0];
+  expect(JSON.parse(call.contents).required_sidebar_constraints).toEqual(
+    constraints,
+  );
+  expect(
+    call.config.responseJsonSchema.properties.schedule_items.items.required,
+  ).toContain("location_scope");
+  expect(call.config.systemInstruction).toContain(
+    "required_sidebar_constraints take priority",
+  );
+});

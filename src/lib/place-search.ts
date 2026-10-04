@@ -9,6 +9,7 @@ export const placeSearchSchema = z.object({
   query: z.string().trim().min(2).max(200),
   category: z.enum(categories).default("attraction"),
   near: locationSchema.optional(),
+  radiusMeters: z.number().min(100).max(50000).optional(),
   budget: z.enum(["any", "budget", "moderate", "premium"]).default("any"),
 });
 const googlePlacesSchema = z.object({
@@ -70,7 +71,7 @@ export async function searchPlaces(input: z.infer<typeof placeSearchSchema>) {
                     latitude: input.near.lat,
                     longitude: input.near.lng,
                   },
-                  radius: 10000,
+                  radius: input.radiusMeters ?? 10000,
                 },
               },
             }

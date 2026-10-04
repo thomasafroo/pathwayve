@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       };
     const draft = await generateSchedule(input);
     if (draft.clarification) return { clarification: draft.clarification };
-    const saved = await materializeSchedule(draft, owner);
+    const saved = await materializeSchedule(draft, owner, input.constraints);
     try {
       await saveSchedule(db, saved.document, input.requestId);
     } catch {

@@ -4,10 +4,10 @@ test("plan a day and replan while preserving a locked stop", async ({
 }, testInfo) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
+  // Keep sample trips independent of the clock and the browser timezone.
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
   await expect(page.getByRole("heading", { name: "Plan trip" })).toBeVisible();
-  await page
-    .getByRole("button", { name: /Create itinerary|Update route/ })
-    .click();
   await expect(
     page.getByRole("heading", { name: "Itinerary", exact: true }),
   ).toBeVisible();
@@ -39,15 +39,12 @@ test("shows server validation errors without replacing a previous plan", async (
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page
-    .getByRole("button", { name: /Create itinerary|Update route/ })
-    .click();
+  // Keep sample trips independent of the clock and the browser timezone.
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
   await expect(page.locator(".stop")).toHaveCount(4);
   await page.getByLabel("Departure", { exact: true }).fill("2030-10-03T13:00");
   await page.getByLabel("Finish by", { exact: true }).fill("2030-10-03T12:00");
-  await page
-    .getByRole("button", { name: /Create itinerary|Update route/ })
-    .click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "End time must be after departure",
   );
@@ -59,12 +56,12 @@ test("edit a trip, attach an activity, undo, and export JSON", async ({
 }, testInfo) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
+  // Keep sample trips independent of the clock and the browser timezone.
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
   await expect(
     page.getByRole("region", { name: "Trip map", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: /Create itinerary|Update route/ })
-    .click();
   await expect(page.locator(".stop")).toHaveCount(4);
   const coffee = page.locator(".stop").filter({
     has: page.getByRole("heading", { name: "The Morning Cup", exact: true }),
@@ -137,9 +134,9 @@ test("a rejected edit preserves the plan and dialogs support Escape", async ({
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page
-    .getByRole("button", { name: /Create itinerary|Update route/ })
-    .click();
+  // Keep sample trips independent of the clock and the browser timezone.
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
   await expect(page.locator(".stop")).toHaveCount(4);
   await page
     .getByRole("button", { name: "Lock Harbour Green Break", exact: true })
@@ -250,9 +247,6 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
   const requestEvent = page.waitForRequest((r) =>
     r.url().endsWith("/api/plan"),
   );
-  await page
-    .getByRole("button", { name: /Create itinerary|Update route/ })
-    .click();
   const request = (await requestEvent).postDataJSON();
   expect(request.origin.name).toBe("Library entrance");
   expect(request.destination.name).toBe("Community Centre");
@@ -287,17 +281,21 @@ test("four planner states keep chat messages and resize when the itinerary opens
   await page.screenshot({ path: testInfo.outputPath("01-planner.png") });
   await page.getByRole("button", { name: "Open trip chat" }).click();
   const chat = page.getByRole("region", { name: "Trip chat", exact: true });
-  expect((await chat.boundingBox())!.width).toBe(360);
+  expect((await chat.boundingBox())!.width).toBe(
+    (await map.boundingBox())!.width - 32,
+  );
   await page.getByLabel("Chat message").fill("Leave time for lunch");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(chat).toContainText("Leave time for lunch");
   await expect(chat).toContainText("Which day should I plan lunch for?");
   await page.screenshot({ path: testInfo.outputPath("02-chat.png") });
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page.getByRole("button", { name: "Create itinerary" }).click();
+  // Keep sample trips independent of the clock and the browser timezone.
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
   await expect(page.locator(".stop")).toHaveCount(4);
   await expect(chat).toHaveClass(/compact/);
-  await expect.poll(async () => (await chat.boundingBox())!.width).toBe(280);
+  await expect.poll(async () => (await chat.boundingBox())!.width).toBe(688);
   expect((await map.boundingBox())!.width).toBe(720);
   await page.screenshot({ path: testInfo.outputPath("04-itinerary-chat.png") });
   await page.getByRole("button", { name: "Close chat panel" }).click();
@@ -321,7 +319,9 @@ test("mobile planner remains usable with chat and itinerary", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page.getByRole("button", { name: "Create itinerary" }).click();
+  // Keep sample trips independent of the clock and the browser timezone.
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
   await expect(page.locator(".stop")).toHaveCount(4);
   await page.getByRole("button", { name: "Open trip chat" }).click();
   await expect(
@@ -436,9 +436,9 @@ test("denied location permission leaves the trip planner usable", async ({
     0,
   );
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page
-    .getByRole("button", { name: /Create itinerary|Update route/ })
-    .click();
+  // Keep sample trips independent of the clock and the browser timezone.
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
   await expect(page.locator(".stop")).toHaveCount(4);
 });
 
@@ -576,4 +576,48 @@ test("late suggestions cannot replace a newer query or reopen after dismissal", 
   ).toBeVisible();
   await page.getByRole("heading", { name: "Plan trip" }).click();
   await expect(page.getByRole("listbox")).toHaveCount(0);
+});
+
+test("drag, arrows and optimization automatically update without Gemini", async ({
+  page,
+}) => {
+  const plans: {
+    selectedStops: { id: string; name: string }[];
+    orderPolicy: string;
+  }[] = [];
+  let geminiCalls = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/plan")) plans.push(request.postDataJSON());
+    if (request.url().endsWith("/api/schedules") && request.method() === "POST")
+      geminiCalls++;
+  });
+  await page.goto("/");
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  await expect(page.locator(".stop")).toHaveCount(4);
+  const before = plans.at(-1)!.selectedStops.map((stop) => stop.id);
+  const target = page.locator(".chosen-stops > div").nth(1);
+  await page
+    .getByRole("button", { name: "Drag The Morning Cup to reorder" })
+    .dragTo(target);
+  await expect.poll(() => plans.length).toBe(2);
+  expect(plans[1].selectedStops.map((stop) => stop.id)).toEqual([
+    before[1],
+    before[0],
+    ...before.slice(2),
+  ]);
+  await expect(page.locator(".stop").nth(1)).toContainText("The Morning Cup");
+  await page
+    .getByRole("button", { name: "Move The Morning Cup up", exact: true })
+    .click();
+  await expect(page.locator(".stop").first()).toContainText("The Morning Cup");
+  expect(plans).toHaveLength(2); // original version reused from the short-lived cache
+  await page.getByLabel("Stop order", { exact: true }).selectOption("optimize");
+  await expect.poll(() => plans.length).toBe(3);
+  expect(plans[2].orderPolicy).toBe("optimize");
+  await expect(
+    page.getByText("Routes update automatically as you edit."),
+  ).toBeVisible();
+  expect(geminiCalls).toBe(0);
 });

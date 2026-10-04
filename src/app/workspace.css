@@ -447,7 +447,7 @@ body {
   border-radius: 8px;
   padding: 9px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 52px 24px;
+  grid-template-columns: 18px 24px minmax(0, 1fr) 52px 24px;
   align-items: center;
   gap: 6px;
 }
@@ -712,6 +712,7 @@ body {
   overflow-wrap: anywhere;
 }
 .chat-composer {
+  flex-shrink: 0;
   border-top: 1px solid #edf1ed;
   display: flex;
   align-items: center;
@@ -719,7 +720,12 @@ body {
   padding: 12px;
   background: white;
 }
-.maps-workspace .chat-composer input {
+.maps-workspace .chat-composer textarea {
+  resize: none;
+  line-height: 20px;
+  max-height: 160px;
+  overflow-y: auto;
+  box-sizing: border-box;
   flex: 1;
   width: 0;
   margin: 0;
@@ -730,7 +736,7 @@ body {
   font-size: 14px;
   outline-offset: 0;
 }
-.maps-workspace .chat-composer input:focus {
+.maps-workspace .chat-composer textarea:focus {
   border-color: #7ba98d;
   box-shadow: 0 0 0 3px #236b5314;
 }
@@ -1351,4 +1357,52 @@ body {
 .maps-workspace .saved-route .travel-leg {
   padding: 4px 0 10px 12px;
   border-bottom: 1px solid #edf1ed;
+}
+
+.chat-constraints-note {
+  padding: 6px 16px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.stop-order-controls {
+  display: grid;
+  gap: 2px;
+}
+
+.stop-drag-handle {
+  cursor: grab;
+  border: 0;
+  background: transparent;
+  color: #527169;
+  padding: 0;
+  font-size: 22px;
+}
+.stop-drag-handle:active {
+  cursor: grabbing;
+}
+.maps-workspace .chosen-stops > .stop-drop-target {
+  outline: 2px solid #216956;
+  background: #e0eee7;
+}
+.plan-submit p {
+  font-size: 13px;
+  color: #527169;
+  margin: 0;
+}
+
+.maps-workspace .map-panel.map-fullscreen,
+.maps-workspace .map-panel:fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 1000;
+}
+.maps-workspace .route-fit-control {
+  top: auto;
+  bottom: 100px;
+}
+.chat-message {
+  white-space: pre-wrap;
 }

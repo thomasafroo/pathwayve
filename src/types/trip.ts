@@ -58,6 +58,7 @@ export const tripRequestSchema = z
     preferences: z.string().trim().max(1000).default(""),
     favoritePlaceIds: z.array(z.string().min(1)).max(100).optional(),
     interestTags: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
+    orderPolicy: z.enum(["preserve", "optimize"]).optional(),
     routingPriority: z
       .enum(["fastest", "less_walking", "fewer_transfers"])
       .optional(),

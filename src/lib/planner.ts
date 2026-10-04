@@ -9,6 +9,7 @@ import {
 import { classifyBringAdvice } from "./bring-advice";
 import { findPlaces } from "./places";
 
+import { optimizeStopOrder } from "./stop-order";
 import { scheduleTrip } from "./routes";
 import { mapsMode } from "./server/env";
 import { AppError } from "./server/http";
@@ -43,7 +44,21 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
         : [];
   if (new Set(selected.map((stop) => stop.id)).size !== selected.length)
     throw new AppError("DUPLICATE_STOP", "Choose each stop once.");
-  const scheduled = await scheduleTrip(request, selected);
+  if (request.orderPolicy === "optimize")
+    request = { ...request, routingPriority: "fastest" };
+  const optimized =
+    request.orderPolicy === "optimize"
+      ? await optimizeStopOrder(
+          selected,
+          (stop) => stop.locked,
+          async (order) => {
+            const scheduled = await scheduleTrip(request, order);
+            return { ...scheduled, arrival: Date.parse(scheduled.arrivalTime) };
+          },
+        )
+      : null;
+  const scheduled =
+    optimized?.result ?? (await scheduleTrip(request, selected));
   if (Date.parse(scheduled.arrivalTime) > Date.parse(request.endTime))
     throw new AppError(
       "TIME_WINDOW",
@@ -59,6 +74,10 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
           "Check venue opening hours and prices before leaving.",
           "Routes are planning estimates, not active navigation.",
         ];
+  if (optimized)
+    warnings.push(
+      `Compared ${optimized.evaluated} stop orders using ${mapsMode() === "live" ? "Google Routes travel times" : "demo estimates"}; chose the earliest arrival among available orders. Larger trips use a bounded search.`,
+    );
   let weather:
     Awaited<ReturnType<typeof openMeteoWeather.forecast>> | undefined =
     undefined;

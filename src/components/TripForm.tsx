@@ -1,5 +1,12 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+  type FormEvent,
+} from "react";
 import {
   categories,
   tripRequestSchema,
@@ -10,6 +17,11 @@ import {
 import { endpoints, demoPlaces } from "@/lib/fixtures";
 import { Icon } from "./Icon";
 import { PlaceSearch } from "./PlaceSearch";
+import {
+  planningConstraintsSchema,
+  type PlanningConstraints,
+} from "@/types/planning-constraints";
+export type TripFormHandle = { getConstraints: () => PlanningConstraints };
 const tags = [
   "Libraries",
   "Museums",
@@ -30,13 +42,21 @@ export function TripForm({
   mode = "demo",
   currentTrip,
   pendingPlace,
+  ref,
 }: {
+  ref?: Ref<TripFormHandle>;
   pendingPlace?: CandidatePlace | null;
   currentTrip: TripState | null;
   mode?: "demo" | "live";
   busy: boolean;
   onPlan: (request: TripRequest) => Promise<void>;
 }) {
+  const [revision, setRevision] = useState(0);
+  const attemptedRevision = useRef(0);
+  const draggedId = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const changed = () => setRevision((value) => value + 1);
+  const formRef = useRef<HTMLFormElement>(null);
   const [origin, setOrigin] = useState<TripRequest["origin"] | null>(null),
     [destination, setDestination] = useState<TripRequest["destination"] | null>(
       null,
@@ -55,6 +75,9 @@ export function TripForm({
   const [selected, setSelected] = useState<
     NonNullable<TripRequest["selectedStops"]>
   >([]);
+  const [orderPolicy, setOrderPolicy] = useState<"preserve" | "optimize">(
+    "preserve",
+  );
   const [favorites, setFavorites] = useState<CandidatePlace[]>([]);
   const [interests, setInterests] = useState<string[]>([]);
   const [budget, setBudget] = useState("any");
@@ -67,6 +90,7 @@ export function TripForm({
   const [consumedPlace, setConsumedPlace] = useState(pendingPlace);
   if (pendingPlace && pendingPlace !== consumedPlace) {
     setConsumedPlace(pendingPlace);
+    changed();
     if (selected.length >= 6) setError("Choose up to six stops.");
     else if (!selected.some((p) => p.id === pendingPlace.id))
       setSelected([
@@ -81,7 +105,13 @@ export function TripForm({
   }
   if (currentTrip !== syncedTrip) {
     setSyncedTrip(currentTrip);
+    setRevision(0);
     if (currentTrip) {
+      setOrigin(currentTrip.request.origin);
+      setDestination(currentTrip.request.destination);
+      setTransportation(currentTrip.request.transportation);
+      setOrderPolicy(currentTrip.request.orderPolicy ?? "preserve");
+      setEditing(null);
       setSelected(
         currentTrip.stops.map((stop) => ({
           ...stop,
@@ -90,31 +120,14 @@ export function TripForm({
       );
     }
   }
-  function choose(place: CandidatePlace) {
-    if (selected.some((s) => s.id === place.id)) return;
-    if (selected.length >= 6) {
-      setError("Choose up to six stops.");
-      return;
-    }
-    setSelected([
-      ...selected,
-      { ...place, durationMinutes: 30, locked: false, priority: "required" },
-    ]);
-  }
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    if (!origin || !destination) {
-      setError(
-        "Choose your starting point and destination from search results.",
-      );
-      return;
-    }
-    const form = new FormData(event.currentTarget);
-    try {
-      const request = tripRequestSchema.parse({
+  useImperativeHandle(ref, () => ({
+    getConstraints() {
+      const form = new FormData(formRef.current!);
+      return planningConstraintsSchema.parse({
         origin,
         destination,
+        transportation,
+        selectedStops: selected,
         startTime: form.get("start")
           ? new Date(String(form.get("start"))).toISOString()
           : undefined,
@@ -122,13 +135,82 @@ export function TripForm({
           ? new Date(String(form.get("end"))).toISOString()
           : undefined,
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        orderPolicy,
+        routingPriority:
+          orderPolicy === "optimize"
+            ? "fastest"
+            : form.get("priority") || "fastest",
+        budget,
+        activities,
+        interestTags: interests,
+        preferences: String(form.get("preferences") || ""),
+        routeRadiusMeters: Number(form.get("routeRadius") || 1000),
+      });
+    },
+  }));
+  function moveStop(from: number, to: number) {
+    if (busy || from === to || from < 0 || to < 0 || to >= selected.length)
+      return;
+    if (
+      selected
+        .slice(Math.min(from, to), Math.max(from, to) + 1)
+        .some((stop) => stop.locked)
+    )
+      return;
+    const reordered = [...selected];
+    reordered.splice(to, 0, reordered.splice(from, 1)[0]);
+    setSelected(reordered);
+    setOrderPolicy("preserve");
+    changed();
+  }
+  function choose(place: CandidatePlace) {
+    if (selected.some((s) => s.id === place.id)) return;
+    if (selected.length >= 6) {
+      setError("Choose up to six stops.");
+      return;
+    }
+    changed();
+    setSelected([
+      ...selected,
+      { ...place, durationMinutes: 30, locked: false, priority: "required" },
+    ]);
+  }
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    attemptedRevision.current = revision;
+    await plan();
+  }
+  async function plan() {
+    setError("");
+    if (!origin || !destination) {
+      setError(
+        "Choose your starting point and destination from search results.",
+      );
+      return;
+    }
+    const form = new FormData(formRef.current!);
+    try {
+      const request = tripRequestSchema.parse({
+        origin,
+        destination,
+        startTime: form.get("start")
+          ? new Date(String(form.get("start"))).toISOString()
+          : currentTrip?.request.startTime,
+        endTime: form.get("end")
+          ? new Date(String(form.get("end"))).toISOString()
+          : currentTrip?.request.endTime,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         transportation,
         activities,
         preferences: String(form.get("preferences") || ""),
         interestTags: interests,
         favoritePlaceIds: favorites.map((place) => place.id),
         budget,
-        routingPriority: form.get("priority") || "fastest",
+        orderPolicy,
+        routingPriority:
+          orderPolicy === "optimize"
+            ? "fastest"
+            : form.get("priority") || "fastest",
         selectedStops: selected,
         suggestionMode,
       });
@@ -143,8 +225,47 @@ export function TripForm({
       );
     }
   }
+  useEffect(() => {
+    if (revision === 0) {
+      attemptedRevision.current = 0;
+      return;
+    }
+    if (
+      busy ||
+      !origin ||
+      !destination ||
+      revision === attemptedRevision.current
+    )
+      return;
+    const timer = window.setTimeout(() => {
+      attemptedRevision.current = revision;
+      void plan();
+    }, 600);
+    return () => window.clearTimeout(timer);
+  });
   return (
-    <form id="trip-planner-form" onSubmit={submit} className="trip-form">
+    <form
+      ref={formRef}
+      id="trip-planner-form"
+      onSubmit={submit}
+      onChange={(event) => {
+        const element = event.target;
+        if (!(
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLSelectElement ||
+          element instanceof HTMLTextAreaElement
+        ))
+          return;
+        if (
+          element.name ||
+          element.type === "number" ||
+          element.type === "checkbox" ||
+          element.tagName === "SELECT"
+        )
+          changed();
+      }}
+      className="trip-form"
+    >
       <fieldset disabled={busy}>
         <div className="form-heading">
           <h1>Plan trip</h1>
@@ -168,6 +289,7 @@ export function TripForm({
                     }
                     disabled={busy}
                     onSelect={(place) => {
+                      changed();
                       const endpoint = {
                         name: place.name,
                         location: place.location,
@@ -204,6 +326,7 @@ export function TripForm({
           type="button"
           className="text-button"
           onClick={() => {
+            changed();
             setOrigin(endpoints[0]);
             setDestination(endpoints[1]);
             setSelected(
@@ -230,7 +353,10 @@ export function TripForm({
               type="button"
               key={mode}
               aria-pressed={transportation === mode}
-              onClick={() => setTransportation(mode)}
+              onClick={() => {
+                setTransportation(mode);
+                changed();
+              }}
             >
               <Icon name={mode} size={19} />
               {mode === "transit"
@@ -244,7 +370,12 @@ export function TripForm({
         <div className="schedule-options">
           <label>
             Route priority
-            <select name="priority" key={transportation} defaultValue="fastest">
+            <select
+              name="priority"
+              key={`${transportation}-${orderPolicy}`}
+              defaultValue="fastest"
+              disabled={orderPolicy === "optimize"}
+            >
               <option value="fastest">Fastest available route</option>
               {transportation === "transit" && (
                 <>
@@ -281,9 +412,99 @@ export function TripForm({
           <p className="field-heading">Selected stops</p>
           <span>{selected.length}/6</span>
         </div>
+        <p className="hint">
+          Chat keeps these stops and your travel mode. Remove a stop here to
+          leave it out.
+        </p>
+        <label>
+          Search distance from route
+          <select name="routeRadius" defaultValue="1000">
+            <option value="500">Within 500 m</option>
+            <option value="1000">Within 1 km</option>
+            <option value="3000">Within 3 km</option>
+          </select>
+        </label>
+        <label>
+          Stop order
+          <select
+            aria-label="Stop order"
+            value={orderPolicy}
+            onChange={(e) =>
+              setOrderPolicy(e.target.value as "preserve" | "optimize")
+            }
+          >
+            <option value="preserve">Keep my order</option>
+            <option value="optimize">Optimize for fastest trip</option>
+          </select>
+        </label>
+        <p className="hint">
+          {orderPolicy === "preserve"
+            ? "Your selected sequence is enforced in routes and chat. Extra stops can fit between your choices."
+            : "Compare actual travel times for your mode. Keeps locked positions; up to 12 orders compared, not a guaranteed global optimum."}
+        </p>
         <div className="chosen-stops">
           {selected.map((place, index) => (
-            <div key={place.id}>
+            <div
+              key={place.id}
+              data-stop-id={place.id}
+              className={
+                dropTarget === place.id ? "stop-drop-target" : undefined
+              }
+              onDragOver={(event) => {
+                if (!busy && !place.locked) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setDropTarget(place.id);
+                }
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const from = selected.findIndex(
+                  (stop) => stop.id === draggedId.current,
+                );
+                moveStop(from, index);
+                draggedId.current = null;
+                setDropTarget(null);
+              }}
+            >
+              <button
+                type="button"
+                className="stop-drag-handle"
+                aria-label={`Drag ${place.name} to reorder`}
+                draggable={!busy && !place.locked}
+                disabled={busy || place.locked}
+                title="Drag to reorder, or use the arrows"
+                onDragStart={(event) => {
+                  draggedId.current = place.id;
+                  event.dataTransfer.setData("text/plain", place.id);
+                  event.dataTransfer.effectAllowed = "move";
+                }}
+                onDragEnd={() => {
+                  draggedId.current = null;
+                  setDropTarget(null);
+                }}
+              >
+                ⠿
+              </button>
+              <span className="stop-order-controls">
+                {([-1, 1] as const).map((direction) => (
+                  <button
+                    key={direction}
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Move ${place.name} ${direction === -1 ? "up" : "down"}`}
+                    disabled={
+                      index + direction < 0 ||
+                      index + direction >= selected.length ||
+                      place.locked ||
+                      selected[index + direction]?.locked
+                    }
+                    onClick={() => moveStop(index, index + direction)}
+                  >
+                    {direction === -1 ? "↑" : "↓"}
+                  </button>
+                ))}
+              </span>
               <strong>
                 {index + 1}. {place.name}
               </strong>
@@ -310,9 +531,10 @@ export function TripForm({
                 type="button"
                 className="icon-button"
                 aria-label={`Remove selected ${place.name}`}
-                onClick={() =>
-                  setSelected(selected.filter((s) => s.id !== place.id))
-                }
+                onClick={() => {
+                  setSelected(selected.filter((s) => s.id !== place.id));
+                  changed();
+                }}
               >
                 <Icon name="close" size={14} />
               </button>

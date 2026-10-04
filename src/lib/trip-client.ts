@@ -22,6 +22,30 @@ async function postTrip(path: string, body: unknown): Promise<TripState> {
     );
   return tripStateSchema.parse(result);
 }
+// Short-lived, tab-local versions; never reuse traffic/transit estimates indefinitely.
+const planCache = new Map<string, { trip: TripState; expires: number }>();
+const pendingPlans = new Map<string, Promise<TripState>>();
+export async function cachedPlan(request: TripRequest): Promise<TripState> {
+  const key = JSON.stringify(request);
+  const cached = planCache.get(key);
+  if (cached && cached.expires > Date.now())
+    return structuredClone(cached.trip);
+  const pending = pendingPlans.get(key);
+  if (pending) return structuredClone(await pending);
+  const work = postTrip("/api/plan", request);
+  pendingPlans.set(key, work);
+  try {
+    const trip = await work;
+    if (planCache.size >= 20) planCache.delete(planCache.keys().next().value!);
+    planCache.set(key, {
+      trip: structuredClone(trip),
+      expires: Date.now() + 60_000,
+    });
+    return trip;
+  } finally {
+    pendingPlans.delete(key);
+  }
+}
 // Keep transport outside visual components. Future service adapters belong here.
 export const tripClient = {
   edit: async (state: WorkspaceTrip, batch: ModificationBatch) => {
@@ -35,7 +59,7 @@ export const tripClient = {
       throw new Error(result.error?.message ?? "Route update failed.");
     return validateWorkspace(result);
   },
-  plan: (request: TripRequest) => postTrip("/api/plan", request),
+  plan: cachedPlan,
   replan: (tripState: TripState, event: TripEvent) =>
     postTrip("/api/replan", { tripState, event }),
 };
