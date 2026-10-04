@@ -127,58 +127,60 @@ export function TripForm({
     }
   }
   return (
-    <form onSubmit={submit} className="trip-form">
+    <form id="trip-planner-form" onSubmit={submit} className="trip-form">
       <fieldset disabled={busy}>
         <div className="form-heading">
-          <span className="eyebrow">YOUR PLACES. YOUR PACE.</span>
-          <h2>Where are we headed?</h2>
-          <p>
-            Choose exact places, explore suggestions, or start with a direct
-            journey.
-          </p>
+          <span className="eyebrow">A DAY THAT GOES YOUR WAY</span>
+          <h2>Make a day of it.</h2>
+          <p>Start anywhere. Add the places you love. Find your way.</p>
         </div>
         <div className="endpoint-fields">
           {(["origin", "destination"] as const).map((kind) => {
             const point = kind === "origin" ? origin : destination;
             return (
-              <div key={kind} className="endpoint-choice">
-                <span className="field-heading">
-                  {kind === "origin" ? "Starting point" : "Destination"}
-                </span>
-                <button
-                  type="button"
-                  className="chosen-endpoint"
-                  onClick={() => setEditing(editing === kind ? null : kind)}
-                >
-                  <Icon name="pin" size={14} />
-                  {point?.name ?? "Choose any location"}
-                  <span>Change</span>
-                </button>
-                {editing === kind && (
-                  <PlaceSearch
-                    label={
-                      kind === "origin"
-                        ? "Search starting point"
-                        : "Search destination"
+            <div key={kind} className="endpoint-choice">
+            <span className="field-heading">
+                {kind === "origin" ? "Starting point" : "Destination"}
+            </span>
+
+            {editing === kind ? (
+                <PlaceSearch
+                label={
+                    kind === "origin"
+                    ? "Search starting point"
+                    : "Search destination"
+                }
+                disabled={busy}
+                onSelect={(place) => {
+                    const endpoint = {
+                    name: place.name,
+                    location: place.location,
+                    placeId: place.id,
+                    };
+
+                    if (kind === "origin") {
+                    setOrigin(endpoint);
+                    setEditing(destination ? null : "destination");
+                    } else {
+                    setDestination(endpoint);
+                    setEditing(null);
                     }
-                    disabled={busy}
-                    onSelect={(place) => {
-                      const endpoint = {
-                        name: place.name,
-                        location: place.location,
-                        placeId: place.id,
-                      };
-                      if (kind === "origin") {
-                        setOrigin(endpoint);
-                        setEditing(destination ? null : "destination");
-                      } else {
-                        setDestination(endpoint);
-                        setEditing(null);
-                      }
-                    }}
-                  />
-                )}
-              </div>
+                }}
+                />
+            ) : (
+                <button
+                type="button"
+                className="chosen-endpoint"
+                onClick={() => setEditing(kind)}
+                >
+                <Icon name="pin" size={14} />
+
+                {point?.name ?? "Choose any location"}
+
+                <span>Change</span>
+                </button>
+            )}
+            </div>
             );
           })}
         </div>
@@ -223,40 +225,46 @@ export function TripForm({
             </button>
           ))}
         </div>
-        <label>
-          Route priority
-          <select name="priority" key={transportation} defaultValue="fastest">
-            <option value="fastest">Fastest available route</option>
-            {transportation === "transit" && (
-              <>
-                <option value="less_walking">Less walking</option>
-                <option value="fewer_transfers">Fewer transfers</option>
-              </>
-            )}
-          </select>
-        </label>
-        <div className="time-fields">
+        <details className="preference-details schedule-options">
+          <summary>
+            <Icon name="clock" size={15} /> Time & route options{" "}
+            <span>Change times</span>
+          </summary>
           <label>
-            Departure
-            <input
-              aria-describedby="time-help"
-              name="start"
-              type="datetime-local"
-            />
+            Route priority
+            <select name="priority" key={transportation} defaultValue="fastest">
+              <option value="fastest">Fastest available route</option>
+              {transportation === "transit" && (
+                <>
+                  <option value="less_walking">Less walking</option>
+                  <option value="fewer_transfers">Fewer transfers</option>
+                </>
+              )}
+            </select>
           </label>
-          <label>
-            Finish by
-            <input
-              aria-describedby="time-help"
-              name="end"
-              type="datetime-local"
-            />
-          </label>
-        </div>
-        <p id="time-help" className="hint">
-          Defaults to now until the end of today. Choose both dates for a longer
-          trip (up to 31 days). Times use your device’s timezone.
-        </p>
+          <div className="time-fields">
+            <label>
+              Departure
+              <input
+                aria-describedby="time-help"
+                name="start"
+                type="datetime-local"
+              />
+            </label>
+            <label>
+              Finish by
+              <input
+                aria-describedby="time-help"
+                name="end"
+                type="datetime-local"
+              />
+            </label>
+          </div>
+          <p id="time-help" className="hint">
+            Defaults to now until the end of today. Choose both dates for a
+            longer trip (up to 31 days). Times use your device’s timezone.
+          </p>
+        </details>
         <div className="form-divider" />
         <div className="selected-stops-heading">
           <p className="field-heading">Places I want to visit</p>
@@ -353,109 +361,114 @@ export function TripForm({
           </div>
         )}
         <div className="form-divider" />
-        <label>
-          How should suggestions work?
-          <select
-            value={suggestionMode}
-            onChange={(e) =>
-              setSuggestionMode(e.target.value as "manual" | "suggest")
-            }
-          >
-            <option value="manual">Only the places I choose</option>
-            <option value="suggest">I’m open to suggestions</option>
-          </select>
-        </label>
-        <p className="hint">
-          Suggestions are yours to approve. Future Gemini suggestions will use
-          these preferences; nothing is added automatically.
-        </p>
-        <details className="preference-details">
-          <summary>Interests & budget</summary>
-          <p className="field-heading">What sounds good?</p>
-          <div className="interests">
-            {categories.map((category) => (
-              <label key={category} className="interest">
-                <input
-                  type="checkbox"
-                  checked={activities.includes(category)}
-                  onChange={() =>
-                    setActivities(
-                      activities.includes(category)
-                        ? activities.filter((a) => a !== category)
-                        : [...activities, category],
-                    )
-                  }
-                />
-                <Icon name={category} size={15} />
-                {category}
-              </label>
-            ))}
-          </div>
-          <div className="interests">
-            {tags.map((tag) => (
-              <label key={tag} className="interest">
-                <input
-                  type="checkbox"
-                  checked={interests.includes(tag)}
-                  onChange={() =>
-                    setInterests(
-                      interests.includes(tag)
-                        ? interests.filter((t) => t !== tag)
-                        : [...interests, tag],
-                    )
-                  }
-                />
-                {tag}
-              </label>
-            ))}
-          </div>
+        <details className="preference-details trip-preferences">
+          <summary>
+            <Icon name="layers" size={15} /> Preferences & suggestions
+          </summary>
           <label>
-            Budget preference
-            <select value={budget} onChange={(e) => setBudget(e.target.value)}>
-              <option value="any">Any budget</option>
-              <option value="budget">Free & inexpensive</option>
-              <option value="moderate">Moderate</option>
-              <option value="premium">Premium</option>
+            How should suggestions work?
+            <select
+              value={suggestionMode}
+              onChange={(e) =>
+                setSuggestionMode(e.target.value as "manual" | "suggest")
+              }
+            >
+              <option value="manual">Only the places I choose</option>
+              <option value="suggest">I’m open to suggestions</option>
             </select>
           </label>
+          <p className="hint">
+            Suggestions are yours to approve. Future Gemini suggestions will use
+            these preferences; nothing is added automatically.
+          </p>
+          <details className="preference-details">
+            <summary>Interests & budget</summary>
+            <p className="field-heading">What sounds good?</p>
+            <div className="interests">
+              {categories.map((category) => (
+                <label key={category} className="interest">
+                  <input
+                    type="checkbox"
+                    checked={activities.includes(category)}
+                    onChange={() =>
+                      setActivities(
+                        activities.includes(category)
+                          ? activities.filter((a) => a !== category)
+                          : [...activities, category],
+                      )
+                    }
+                  />
+                  <Icon name={category} size={15} />
+                  {category}
+                </label>
+              ))}
+            </div>
+            <div className="interests">
+              {tags.map((tag) => (
+                <label key={tag} className="interest">
+                  <input
+                    type="checkbox"
+                    checked={interests.includes(tag)}
+                    onChange={() =>
+                      setInterests(
+                        interests.includes(tag)
+                          ? interests.filter((t) => t !== tag)
+                          : [...interests, tag],
+                      )
+                    }
+                  />
+                  {tag}
+                </label>
+              ))}
+            </div>
+            <label>
+              Budget preference
+              <select
+                value={budget}
+                onChange={(e) => setBudget(e.target.value)}
+              >
+                <option value="any">Any budget</option>
+                <option value="budget">Free & inexpensive</option>
+                <option value="moderate">Moderate</option>
+                <option value="premium">Premium</option>
+              </select>
+            </label>
+          </details>
+          {suggestionMode === "suggest" && (
+            <PlaceSearch
+              key={[...activities, ...interests].join(",")}
+              label="Explore suggestions"
+              initialQuery={[...interests, ...activities][0] || "things to do"}
+              near={destination?.location}
+              budget={budget}
+              favorites={favorites}
+              onFavorite={(place) =>
+                setFavorites(
+                  favorites.some((f) => f.id === place.id)
+                    ? favorites.filter((f) => f.id !== place.id)
+                    : [...favorites, place],
+                )
+              }
+              onSelect={choose}
+              disabled={busy}
+            />
+          )}
+          <label>
+            Anything else?
+            <textarea
+              name="preferences"
+              maxLength={1000}
+              rows={3}
+              placeholder="Quiet places, vegetarian food, avoid crowds…"
+            />
+          </label>
         </details>
-        {suggestionMode === "suggest" && (
-          <PlaceSearch
-            key={[...activities, ...interests].join(",")}
-            label="Explore suggestions"
-            initialQuery={[...interests, ...activities][0] || "things to do"}
-            near={destination?.location}
-            budget={budget}
-            favorites={favorites}
-            onFavorite={(place) =>
-              setFavorites(
-                favorites.some((f) => f.id === place.id)
-                  ? favorites.filter((f) => f.id !== place.id)
-                  : [...favorites, place],
-              )
-            }
-            onSelect={choose}
-            disabled={busy}
-          />
-        )}
-        <label>
-          Anything else?
-          <textarea
-            name="preferences"
-            maxLength={1000}
-            rows={3}
-            placeholder="Quiet places, vegetarian food, avoid crowds…"
-          />
-        </label>
         {error && (
           <p role="alert" className="search-error">
             {error}
           </p>
         )}
-        <button className="primary" disabled={busy}>
-          {busy ? "Finding your route…" : "Plan my day"}
-          <Icon name="arrow" size={18} />
-        </button>
+
         <p className="form-footnote">
           Your selected places stay in your chosen order.
         </p>
