@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { scheduleIntent } from "./fixtures/schedule";
-import { generateSchedule } from "@/lib/schedule-gemini";
+import { generateSchedule, quotaDetails } from "@/lib/schedule-gemini";
 
 const { generateContent } = vi.hoisted(() => ({ generateContent: vi.fn() }));
 vi.mock("node:timers/promises", () => ({
@@ -54,6 +54,59 @@ it("reports quota separately without repeatedly spending requests", async () => 
     status: 429,
   });
   expect(generateContent).toHaveBeenCalledTimes(1);
+});
+it("logs which quota a 429 exhausted without logging the prompt", async () => {
+  const body = {
+    error: {
+      code: 429,
+      status: "RESOURCE_EXHAUSTED",
+      details: [
+        {
+          "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+          violations: [
+            {
+              quotaMetric:
+                "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+              quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+              quotaDimensions: { location: "global", model: "test-model" },
+              quotaValue: "20",
+            },
+          ],
+        },
+        {
+          "@type": "type.googleapis.com/google.rpc.RetryInfo",
+          retryDelay: "34s",
+        },
+      ],
+    },
+  };
+  const error = Object.assign(new Error(JSON.stringify(body)), {
+    status: 429,
+  });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  generateContent.mockRejectedValue(error);
+  await expect(generateSchedule(request)).rejects.toMatchObject({
+    code: "AI_QUOTA",
+  });
+  expect(warn).toHaveBeenCalledWith(
+    "Gemini quota exceeded",
+    expect.objectContaining({
+      violations: [
+        expect.objectContaining({
+          quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+          quotaValue: "20",
+          model: "test-model",
+        }),
+      ],
+      retryDelay: "34s",
+    }),
+  );
+  expect(JSON.stringify(warn.mock.calls)).not.toContain(request.prompt);
+  expect(quotaDetails({ status: 429 })).toEqual({
+    violations: [],
+    retryDelay: undefined,
+  });
+  warn.mockRestore();
 });
 it("requests JSON constrained by the shared schema and parses it", async () => {
   generateContent.mockResolvedValue({ text: JSON.stringify(scheduleIntent()) });

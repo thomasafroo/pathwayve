@@ -17,6 +17,40 @@ function providerStatus(error: unknown) {
     : undefined;
 }
 
+// The SDK's ApiError message is the provider's JSON error body. For 429s it names
+// the exhausted quota (per-minute vs per-day, requests vs tokens). Log only those
+// identifiers, never the prompt.
+export function quotaDetails(error: unknown) {
+  type Detail = {
+    "@type"?: string;
+    retryDelay?: string;
+    violations?: {
+      quotaId?: string;
+      quotaMetric?: string;
+      quotaValue?: string;
+      quotaDimensions?: Record<string, string>;
+    }[];
+  };
+  let details: Detail[] = [];
+  try {
+    const body = JSON.parse(error instanceof Error ? error.message : "");
+    if (Array.isArray(body?.error?.details)) details = body.error.details;
+  } catch {
+    // Non-JSON message; fall through with no details.
+  }
+  return {
+    violations: details
+      .flatMap((detail) => detail.violations ?? [])
+      .map((violation) => ({
+        quotaId: violation.quotaId,
+        quotaMetric: violation.quotaMetric,
+        quotaValue: violation.quotaValue,
+        model: violation.quotaDimensions?.model,
+      })),
+    retryDelay: details.find((detail) => detail.retryDelay)?.retryDelay,
+  };
+}
+
 function isTimeout(error: unknown) {
   return (
     error instanceof Error &&
@@ -95,12 +129,17 @@ export async function generateSchedule(input: PromptRequest) {
         "Gemini took too long to respond, including after one retry. Your prompt has been kept. Please try again shortly.",
         504,
       );
-    if (status === 429)
+    if (status === 429) {
+      console.warn("Gemini quota exceeded", {
+        model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
+        ...quotaDetails(error),
+      });
       throw new AppError(
         "AI_QUOTA",
         "Gemini’s rate limit or quota was reached. Your prompt has been kept. Check this API project’s quota in Google AI Studio before retrying.",
         429,
       );
+    }
     if (status === 503 || status === 504)
       throw new AppError(
         "AI_UNAVAILABLE",
