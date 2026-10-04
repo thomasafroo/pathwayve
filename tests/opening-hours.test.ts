@@ -55,9 +55,16 @@ it("date-specific closures override regular hours but not dates outside their co
   );
 });
 it("uses the venue timezone across daylight saving changes", () => {
-  const sunday = place([
-    { open: { day: 0, hour: 9 }, close: { day: 0, hour: 17 } },
-  ]);
+  // Los Angeles still observes DST; tzdata 2026c keeps Vancouver on PDT year-round.
+  const sunday = {
+    openingHours: openingHoursSchema.parse({
+      timeZone: "America/Los_Angeles",
+      checkedAt: "2030-09-01T00:00:00Z",
+      regular: {
+        periods: [{ open: { day: 0, hour: 9 }, close: { day: 0, hour: 17 } }],
+      },
+    }),
+  };
   const arrival = Date.parse("2030-11-03T16:00:00Z"); // 8am PST after fallback
   expect(visitWindow(sunday, arrival, 30, arrival + 6 * 3600000)?.start).toBe(
     Date.parse("2030-11-03T17:00:00Z"),
