@@ -1,5 +1,6 @@
 import "server-only";
-import { scopedPlaceQuery } from "./place-scope";
+import { scopedPlaceQuery, geographicAnchor } from "./place-scope";
+import { distanceMeters } from "./routes";
 import { visitWindow } from "./opening-hours";
 import { refreshPlaceHours } from "./place-hours";
 import { randomUUID } from "node:crypto";
@@ -127,6 +128,18 @@ export async function materializeSchedule(
   // Sidebar provider IDs/coordinates are authoritative: never search their names again.
   for (const [index, item] of items.entries()) {
     const model = draft.schedule_items[index];
+    // Preserve the requested identity even if the model shortened its search query.
+    if (
+      /\bno\s*frills\b/i.test(item.title) &&
+      !/\bno\s*frills\b/i.test(item.place_query ?? "")
+    ) {
+      item.place_query = item.title;
+    } else if (
+      /\b(?:movie\s+theat(?:er|re)|cinema)\b/i.test(item.title) &&
+      !/\b(?:movie\s+theat(?:er|re)|cinema)\b/i.test(item.place_query ?? "")
+    ) {
+      item.place_query = item.title;
+    }
     const geographicQuery = item.place_query
       ? scopedPlaceQuery(item.title, item.place_query)
       : null;
@@ -144,7 +157,51 @@ export async function materializeSchedule(
     ) {
       genericIds.add(item.id);
     } else if (item.place_query) {
-      const place = await find(item.place_query, undefined, true);
+      const anchorQuery = geographicQuery && geographicAnchor(geographicQuery);
+      let place: CandidatePlace | null;
+      if (anchorQuery) {
+        const matchesEndpoint = (query: string, name: string) => {
+          const normalized = anchorQuery.toLowerCase();
+          return [query, name].some((value) => {
+            const text = value.toLowerCase();
+            return (
+              text === normalized ||
+              (text.length >= 3 && normalized.startsWith(`${text} `))
+            );
+          });
+        };
+        const anchor = matchesEndpoint(
+          intent.destination_query,
+          destination.name,
+        )
+          ? destination
+          : matchesEndpoint(intent.origin_query, origin.name)
+            ? origin
+            : await find(anchorQuery, destination.location);
+        if (!anchor) {
+          place = null;
+        } else {
+          const radiusMeters = /downtown/i.test(anchorQuery) ? 5000 : 10000;
+          const response = await searchPlaces({
+            query: item.place_query,
+            category: "attraction",
+            budget: "any",
+            near: anchor.location,
+            radiusMeters,
+          });
+          place =
+            response.places
+              .filter((candidate) => !excludedPlaceIds.includes(candidate.id))
+              .map((candidate) => ({
+                candidate,
+                distance: distanceMeters(anchor.location, candidate.location),
+              }))
+              .filter(({ distance }) => distance <= radiusMeters)
+              .sort((a, b) => a.distance - b.distance)[0]?.candidate ?? null;
+        }
+      } else {
+        place = await find(item.place_query, undefined, true);
+      }
       if (place) {
         item.place_id = place.id;
         places.set(item.id, place);
@@ -449,7 +506,10 @@ export async function materializeSchedule(
         waitMinutes: Math.ceil((start - arrival) / 60000),
         durationMinutes: item.duration_minutes,
         priority: item.priority,
-        locked: item.order_locked,
+        // Requested sequence controls planning, not the user's editing permissions.
+        locked:
+          constraints?.selectedStops.find((stop) => stop.id === place.id)
+            ?.locked ?? false,
         reason: item.title,
       });
       cursor = place;

@@ -21,9 +21,7 @@ import { WeatherCard } from "./WeatherCard";
 import { TripChat, type ChatMessage } from "./TripChat";
 import { SavedSchedule } from "./SavedSchedule";
 import type { ScheduleDocument } from "@/types/schedule";
-import { PlaceSearch } from "./PlaceSearch";
 import { AccountControls } from "./AccountControls";
-import type { CandidatePlace } from "@/types/trip";
 import { CalendarDialog } from "./CalendarDialog";
 import { savedScheduleCalendar, workspaceCalendar } from "@/lib/calendar";
 
@@ -35,6 +33,12 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
       mode={mode}
       onClear={() => {
         clearPlanCache();
+        try {
+          sessionStorage.removeItem("pathwayve.pending-save.v1");
+          localStorage.removeItem("pathwayve-preferences-v1");
+        } catch {
+          /* Reset the visible workspace even if storage is unavailable. */
+        }
         setSession((value) => value + 1);
       }}
     />
@@ -59,12 +63,11 @@ function PlannerSession({
   const [savedDocument, setSavedDocument] = useState<ScheduleDocument | null>(
     null,
   );
-  const [mapSearchOpen, setMapSearchOpen] = useState(false);
-  const [pendingPlace, setPendingPlace] = useState<CandidatePlace | null>(null);
   const chatTrigger = useRef<HTMLButtonElement>(null);
   const [state, setState] = useState<WorkspaceTrip | null>(null);
   const [history, setHistory] = useState<WorkspaceTrip[]>([]);
   const [busy, setBusy] = useState(false);
+  const planRevision = useRef(0);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -122,10 +125,12 @@ function PlannerSession({
     }
   }
   async function onPlan(request: TripRequest) {
+    const revision = ++planRevision.current;
     setBusy(true);
     setError("");
     try {
       const planned = await tripClient.plan(request);
+      if (revision !== planRevision.current) return;
       const next = state
         ? validateWorkspace({
             trip: { ...planned, id: state.trip.id },
@@ -141,11 +146,12 @@ function PlannerSession({
       setMessage(next.trip.summary);
       setItineraryOpen(true);
     } catch (err) {
+      if (revision !== planRevision.current) return;
       setError(
         err instanceof Error ? err.message : "We couldn't plan your day.",
       );
     } finally {
-      setBusy(false);
+      if (revision === planRevision.current) setBusy(false);
     }
   }
   async function onReplan(event: TripEvent) {
@@ -265,9 +271,8 @@ function PlannerSession({
           <button
             type="button"
             className="secondary"
-            disabled={busy}
             onClick={onClear}
-            title="Clear the current route, stops, chat and navigation. Saved schedules and preferences are kept."
+            title="Clear the current trip, chat, preferences and pending draft. Saved schedules are kept."
           >
             Clear everything
           </button>
@@ -307,7 +312,6 @@ function PlannerSession({
             }}
             onSignOut={() => {
               setFormVersion((version) => version + 1);
-              setPendingPlace(null);
               setState(null);
               setSavedDocument(null);
               setDocumentSaved(false);
@@ -336,7 +340,6 @@ function PlannerSession({
               onPlan={onPlan}
               mode={mode}
               currentTrip={mapTrip}
-              pendingPlace={pendingPlace}
             />
             {savedDocument &&
               savedDocument.schedule_runs[0].result.unscheduled_items.length >
@@ -411,30 +414,6 @@ function PlannerSession({
             }}
             onCancelPick={() => setPicking(false)}
           />
-          <div className="map-search">
-            <button
-              className="map-search-trigger"
-              aria-expanded={mapSearchOpen}
-              onClick={() => setMapSearchOpen(!mapSearchOpen)}
-            >
-              <Icon name="search" size={18} />
-              <span>Search places{trip ? " along the route" : ""}</span>
-              <Icon name={mapSearchOpen ? "close" : "plus"} size={16} />
-            </button>
-            {mapSearchOpen && (
-              <div className="map-search-results">
-                <PlaceSearch
-                  label="Search map places"
-                  disabled={busy}
-                  near={trip?.request.destination.location}
-                  onSelect={(place) => {
-                    setPendingPlace({ ...place });
-                    setMapSearchOpen(false);
-                  }}
-                />
-              </div>
-            )}
-          </div>
           {error && (
             <div role="alert" className="workspace-error">
               <span>{error}</span>
@@ -455,7 +434,10 @@ function PlannerSession({
               context={trip?.request ?? null}
               getConstraints={() => tripForm.current?.getConstraints() ?? null}
               busy={busy}
-              onBusy={setBusy}
+              onBusy={(value) => {
+                if (value) planRevision.current++;
+                setBusy(value);
+              }}
               onSaved={(document, workspace) => {
                 setDocumentSaved(false);
                 setFormVersion((version) => version + 1);

@@ -494,14 +494,17 @@ it("does not accumulate echoed preferences over repeated planning updates", () =
 it.each(["transit", "driving"] as const)(
   "uses downtown and near-UBC qualifiers outside the corridor for %s",
   async (transportation) => {
-    const theater = place("Downtown theater", 49.5, -123.5);
-    const grocery = place("Grocery near UBC", 49.55, -123.55);
+    const theater = place("Downtown theater", 49.28, -123.12);
+    const grocery = place("Grocery near UBC", 49.3, -123.12);
+    const fartherGrocery = place("Farther grocery", 49.34, -123.12);
     vi.mocked(searchPlaces).mockImplementation(async ({ query }) => ({
       source: "live",
       places: query.includes("downtown")
         ? [theater]
         : query.includes("UBC")
-          ? [grocery]
+          ? query === "UBC"
+            ? [destination]
+            : [fartherGrocery, grocery]
           : [],
     }));
     const input = constraints();
@@ -537,11 +540,33 @@ it.each(["transit", "driving"] as const)(
       grocery.id,
     ]);
     expect(document.schedule_items[1].place_query).toBe("No Frills near UBC");
-    expect(searchPlaces).toHaveBeenCalledTimes(2);
-    expect(
-      vi
-        .mocked(searchPlaces)
-        .mock.calls.every(([request]) => request.radiusMeters === undefined),
-    ).toBe(true);
+    expect(searchPlaces).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "No Frills near UBC",
+        near: destination.location,
+        radiusMeters: 10000,
+      }),
+    );
+    expect(workspace?.trip.stops.every((stop) => !stop.locked)).toBe(true);
   },
 );
+
+it("leaves a geographic request unresolved when every candidate is outside its area", async () => {
+  const input = constraints();
+  input.selectedStops = [];
+  const draft = scheduleIntent();
+  draft.schedule_items[0] = {
+    ...draft.schedule_items[0],
+    title: "No Frills near Destination",
+    place_query: "No Frills near Destination",
+    location_scope: "specific",
+    priority: "required",
+  };
+  vi.mocked(searchPlaces).mockResolvedValue({
+    source: "live",
+    places: [place("Distant store", 50.3, -123.12)],
+  });
+  const { document } = await materializeSchedule(draft, owner, input);
+  expect(document.schedule_items[0].place_id).toBeNull();
+  expect(document.schedule_runs[0].status).toBe("infeasible");
+});

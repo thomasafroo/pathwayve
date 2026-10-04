@@ -13,3 +13,10 @@ export function scopedPlaceQuery(title: string, query: string) {
   if (geographic(title)) return title;
   return null;
 }
+
+export function geographicAnchor(query: string) {
+  const match = query.match(/\b(?:near|around|close to|in)\s+(.+?)\s*$/i);
+  if (match && scopedPlaceQuery(query, query)) return match[1].trim();
+  const downtown = query.match(/\bdowntown\b.*$/i);
+  return downtown?.[0] ?? null;
+}

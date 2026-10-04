@@ -91,6 +91,38 @@ async function openChat(page: import("@playwright/test").Page) {
   return page.getByRole("region", { name: "Trip chat", exact: true });
 }
 
+test("Clear everything works during generation and ignores the late result", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/schedules/preview", async (route) => {
+    await held;
+    await route.fulfill({ json: { document, workspace: null } });
+  });
+  await page.goto("/");
+  const chat = await openChat(page);
+  await chat.getByLabel("Chat message").fill("Plan a day");
+  const request = page.waitForRequest("**/api/schedules/preview");
+  await chat.getByRole("button", { name: "Send message" }).click();
+  await request;
+  await page
+    .getByRole("button", { name: "Clear everything", exact: true })
+    .click();
+  const response = page.waitForResponse("**/api/schedules/preview");
+  release();
+  await response;
+  await expect(
+    page.getByRole("complementary", { name: "Itinerary panel" }),
+  ).toHaveCount(0);
+  await openChat(page);
+  await expect(page.getByRole("log")).not.toContainText(
+    "Coffee and study time",
+  );
+});
+
 test("chat panel previews a schedule, then explicitly saves and reopens it", async ({
   page,
 }, testInfo) => {

@@ -358,12 +358,14 @@ export function Map(props: MapProps) {
               if (picking && event.detail.latLng) onPick(event.detail.latLng);
             }}
           >
-            <AdvancedMarker
-              position={trip?.request.origin.location ?? endpoints[0].location}
-              title={trip?.request.origin.name ?? endpoints[0].name}
-            >
-              <span className="map-marker endpoint-marker">S</span>
-            </AdvancedMarker>
+            {trip && (
+              <AdvancedMarker
+                position={trip.request.origin.location}
+                title={trip.request.origin.name}
+              >
+                <span className="map-marker endpoint-marker">S</span>
+              </AdvancedMarker>
+            )}
             {trip?.stops.map((stop, index) => (
               <AdvancedMarker
                 key={stop.id}
@@ -379,14 +381,14 @@ export function Map(props: MapProps) {
                 </span>
               </AdvancedMarker>
             ))}
-            <AdvancedMarker
-              position={
-                trip?.request.destination.location ?? endpoints[1].location
-              }
-              title={trip?.request.destination.name ?? endpoints[1].name}
-            >
-              <span className="map-marker endpoint-marker">E</span>
-            </AdvancedMarker>
+            {trip && (
+              <AdvancedMarker
+                position={trip.request.destination.location}
+                title={trip.request.destination.name}
+              >
+                <span className="map-marker endpoint-marker">E</span>
+              </AdvancedMarker>
+            )}
             <RouteOverlay
               trip={trip}
               selectedId={selectedId}

@@ -327,3 +327,21 @@ from one of them or an inconsistent `along_route` classification. Generic reques
 without a named area still use corridor discovery. Provider-missing cinema hours
 remain unverified: the UI links to place details and reminds users to confirm
 showtimes rather than treating a calculated arrival as a valid screening time.
+
+Qualified place searches resolve the named area to coordinates and rank returned
+candidates by distance to that anchor. Candidates outside 10 km (5 km for downtown)
+are rejected; unresolved anchors leave the request unscheduled. These are bounded
+searches, not a guarantee of the closest venue among all possible places.
+Prompt-derived order is preserved during initial planning without locking the
+editable stop. Existing explicit locks can be released from the sidebar.
+Stay minutes commit on blur or Enter; typing does not trigger route requests.
+
+Clear everything remains available during planning and clears the pending sign-in
+draft and stored planning preferences as well as the current workspace. Saved
+account schedules are retained. Late chat results and pre-reset cache writes do
+not restore discarded trips. Complete journey descriptions such as "I am heading
+from SFU to UBC" start a fresh trip without old selected stops, endpoints or dates;
+short follow-ups keep the current context. The chat's Start a new trip checkbox
+provides an explicit override. Clarification replies retain their new-trip context.
+No Frills results must match the grocery brand name, and movie-theater queries
+use strict Google Places cinema filtering.

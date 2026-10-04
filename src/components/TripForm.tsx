@@ -789,6 +789,24 @@ export function TripForm({
                   />
                   {place.locked ? "Required · locked" : "Required"}
                 </label>
+                {place.locked && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => {
+                      setSelected(
+                        selected.map((stop) =>
+                          stop.id === place.id
+                            ? { ...stop, locked: false }
+                            : stop,
+                        ),
+                      );
+                      changed();
+                    }}
+                  >
+                    Unlock stop
+                  </button>
+                )}
                 {place.openingHours && <PlaceHours place={place} />}
               </div>
               <label>
@@ -798,16 +816,36 @@ export function TripForm({
                   type="number"
                   min={5}
                   max={180}
-                  value={place.durationMinutes}
-                  onChange={(e) =>
-                    setSelected(
-                      selected.map((s) =>
-                        s.id === place.id
-                          ? { ...s, durationMinutes: Number(e.target.value) }
-                          : s,
-                      ),
-                    )
-                  }
+                  key={`${place.id}-${place.durationMinutes}`}
+                  defaultValue={place.durationMinutes}
+                  onChange={(event) => event.stopPropagation()}
+                  onBlur={(event) => {
+                    const minutes = Number(event.currentTarget.value);
+                    if (
+                      !Number.isInteger(minutes) ||
+                      minutes < 5 ||
+                      minutes > 180
+                    ) {
+                      event.currentTarget.value = String(place.durationMinutes);
+                      return;
+                    }
+                    if (minutes !== place.durationMinutes) {
+                      setSelected(
+                        selected.map((stop) =>
+                          stop.id === place.id
+                            ? { ...stop, durationMinutes: minutes }
+                            : stop,
+                        ),
+                      );
+                      changed();
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
                 />
               </label>
               <button

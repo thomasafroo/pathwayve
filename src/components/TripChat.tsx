@@ -34,6 +34,7 @@ export function TripChat({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [newTrip, setNewTrip] = useState(false);
   const [error, setError] = useState("");
   const [planning, setPlanning] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -99,9 +100,30 @@ export function TripChat({
     setPlanning(true);
     setError("");
     requestId.current ??= crypto.randomUUID();
-    const combined = [...conversation, `User: ${text}`].join("\n");
+    // A complete journey description replaces the previous trip. Short follow-ups
+    // continue editing it; the checkbox also handles less explicit new requests.
+    const newDescription =
+      /\b(?:heading|going|travel(?:ling|ing)?|trip)\s+from\b[\s\S]+?\bto\s+\S/i.test(
+        text,
+      ) || /^from\s+.+?\s+to\s+\S/i.test(text);
+    const replaceTrip = newTrip || newDescription;
+    const combined = [
+      ...(newDescription ? [] : conversation),
+      `User: ${text}`,
+    ].join("\n");
     try {
-      const constraints = getConstraints();
+      const currentConstraints = getConstraints();
+      const constraints =
+        replaceTrip && currentConstraints
+          ? {
+              ...currentConstraints,
+              selectedStops: [],
+              origin: null,
+              destination: null,
+              startTime: undefined,
+              endTime: undefined,
+            }
+          : currentConstraints;
       const snapshot = JSON.stringify(constraints);
       if (snapshot !== constraintSnapshot.current) {
         requestId.current = crypto.randomUUID();
@@ -116,26 +138,28 @@ export function TripChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: combined,
-          context,
+          context: replaceTrip ? null : context,
           constraints,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           requestId: requestId.current,
         }),
       });
       const data = await response.json();
+      if (unmounted.current) return;
       if (!response.ok)
         throw new Error(
           data.error?.message ||
             "We couldn’t plan your schedule. Please try again.",
         );
       if (data.clarification) {
+        setNewTrip(replaceTrip);
         onMessages((previous) => [
           ...previous,
           { role: "user", text },
           { role: "assistant", text: data.clarification },
         ]);
         setConversation([
-          ...conversation,
+          ...(newDescription ? [] : conversation),
           `User: ${text}`,
           `Assistant clarification: ${data.clarification}`,
         ]);
@@ -172,15 +196,17 @@ export function TripChat({
         },
       ]);
       setDraft("");
+      setNewTrip(false);
       setConversation([]);
       requestId.current = null;
     } catch (err) {
+      if (unmounted.current) return;
       // Keep the draft and request id so a retry is idempotent.
       setError(err instanceof Error ? err.message : "Unable to plan schedule.");
     } finally {
       sending.current = false;
       setPlanning(false);
-      onBusy(false);
+      if (!unmounted.current) onBusy(false);
     }
   }
   async function transcribe(audio: Blob) {
@@ -417,6 +443,18 @@ export function TripChat({
         Required and locked stops are protected. Ask to remove optional stops in
         chat. General place requests search within your route radius.
       </p>
+      <label>
+        <input
+          type="checkbox"
+          checked={newTrip}
+          disabled={busy}
+          onChange={(event) => {
+            setNewTrip(event.target.checked);
+            setConversation([]);
+          }}
+        />
+        Start a new trip
+      </label>
       <form className="chat-composer" onSubmit={submit}>
         <textarea
           ref={composer}

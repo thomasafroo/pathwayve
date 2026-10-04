@@ -7,6 +7,42 @@ async function gotoHydrated(page: import("@playwright/test").Page) {
   await page.goto("/");
   await hydrated;
 }
+test("duration typing waits for confirmation and sidebar locks can be released", async ({
+  page,
+}) => {
+  await gotoHydrated(page);
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
+  await expect(page.locator(".stop")).toHaveCount(4);
+  let requests = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/plan")) requests++;
+  });
+  const duration = page.getByLabel("Planned duration for The Morning Cup", {
+    exact: true,
+  });
+  await duration.fill("9");
+  await page.waitForTimeout(900);
+  expect(requests).toBe(0);
+  await expect(duration).toBeFocused();
+  await duration.fill("90");
+  await duration.press("Enter");
+  await expect(
+    page.getByLabel("Duration for The Morning Cup", { exact: true }),
+  ).toHaveValue("90");
+  expect(requests).toBe(1);
+  await page
+    .getByRole("button", { name: "Lock The Morning Cup", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Required stop: The Morning Cup", { exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Unlock stop", exact: true }).click();
+  await expect(
+    page.getByLabel("Required stop: The Morning Cup", { exact: true }),
+  ).toBeEnabled();
+});
 test("plan a day and replan while preserving a locked stop", async ({
   page,
 }, testInfo) => {
@@ -747,6 +783,22 @@ test("AI workspace has one transit timeline and Clear everything resets the sess
   ).toBeVisible();
   await expect(page.locator(".stop")).toHaveCount(4);
   await expect(page.locator(".saved-items li")).toHaveCount(0);
+  await page
+    .getByLabel("Chat message")
+    .fill("I am heading from SFU to UBC. Breakfast then a movie.");
+  const freshRequest = page.waitForRequest("**/api/schedules/preview");
+  await page.getByRole("button", { name: "Send message" }).click();
+  expect((await freshRequest).postDataJSON()).toMatchObject({
+    context: null,
+    constraints: { origin: null, destination: null, selectedStops: [] },
+  });
+  await expect(
+    page.getByRole("button", { name: "Send message" }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("Chat message")).toBeEnabled();
+  await page.evaluate(() =>
+    sessionStorage.setItem("pathwayve.pending-save.v1", "stale draft"),
+  );
   await expect(
     page.getByRole("complementary", { name: "Itinerary panel" }),
   ).toContainText("on transit");
@@ -754,6 +806,11 @@ test("AI workspace has one transit timeline and Clear everything resets the sess
     .getByRole("button", { name: "Clear everything", exact: true })
     .click();
   await expect(page.locator(".stop")).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      sessionStorage.getItem("pathwayve.pending-save.v1"),
+    ),
+  ).toBeNull();
   await expect(page.locator(".chosen-stops > div")).toHaveCount(0);
   await expect(
     page.getByRole("complementary", { name: "Itinerary panel" }),
