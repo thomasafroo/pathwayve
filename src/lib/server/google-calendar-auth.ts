@@ -128,12 +128,7 @@ export async function beginGoogleConnection(request: Request) {
     );
   const owner = await scheduleOwner();
   // Verify storage is ready before sending the user through consent.
-  await (
-    await getDatabase()
-  ).query(
-    "SELECT owner_id FROM pathwayve.google_calendar_connections WHERE owner_id=$1",
-    [owner],
-  );
+  await hasGoogleConnection(owner);
   const auth = client();
   const { codeVerifier, codeChallenge } =
     await auth.generateCodeVerifierAsync();
@@ -206,13 +201,28 @@ export async function completeGoogleConnection(request: Request) {
   await saveGoogleTokens(pending.owner, tokens);
 }
 export async function hasGoogleConnection(owner: string) {
-  const result = await (
-    await getDatabase()
-  ).query(
-    "SELECT owner_id FROM pathwayve.google_calendar_connections WHERE owner_id=$1",
-    [owner],
-  );
-  return result.rows.length > 0;
+  try {
+    const result = await (
+      await getDatabase()
+    ).query(
+      "SELECT owner_id FROM pathwayve.google_calendar_connections WHERE owner_id=$1",
+      [owner],
+    );
+    return result.rows.length > 0;
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "42P01"
+    )
+      throw new AppError(
+        "GOOGLE_CALENDAR_STORAGE",
+        "Google Calendar storage is not initialized. Run npm run db:migrate against the database used by this deployment, then reconnect.",
+        503,
+      );
+    throw error;
+  }
 }
 export async function googleAccessToken(owner: string, forceRefresh = false) {
   const result = await (
