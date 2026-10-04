@@ -236,6 +236,7 @@ body {
   border-bottom: 1px solid var(--line);
 }
 .workspace-brand {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -254,8 +255,15 @@ body {
 .workspace-heading-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
+}
+/* Header buttons size to their label; the shared .secondary style is full-width. */
+.maps-workspace .workspace-heading-actions > button {
+  width: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin: 0;
 }
 .trip-name {
   max-width: 320px;

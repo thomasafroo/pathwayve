@@ -149,3 +149,49 @@ test("cancelled Google login restores the draft without saving", async ({
   await expect(page.locator(".stop")).toHaveCount(4);
   expect(saves).toBe(0);
 });
+
+test("signed-in header actions fit without being cut off", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) =>
+    route.fulfill({
+      json: {
+        user: {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Alexandra Longname",
+          email: "alexandra@example.com",
+        },
+        session: { id: "test-session", expiresAt: "2099-01-01T00:00:00Z" },
+      },
+    }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  await page.getByRole("button", { name: "Create itinerary" }).click();
+  await expect(page.locator(".stop")).toHaveCount(4);
+  for (const width of [1000, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const header = page.locator(".workspace-header");
+    for (const name of [
+      "Calendar",
+      "Save schedule",
+      "My schedules",
+      "Sign out",
+    ]) {
+      const box = (await header
+        .getByRole("button", { name, exact: true })
+        .boundingBox())!;
+      expect(box.x + box.width, `${name} at ${width}px`).toBeLessThanOrEqual(
+        width,
+      );
+    }
+    const calendar = (await header
+      .getByRole("button", { name: "Calendar", exact: true })
+      .boundingBox())!;
+    expect(calendar.width).toBeLessThan(140);
+    await page.screenshot({
+      path: testInfo.outputPath(`header-${width}.png`),
+      clip: { x: 0, y: 0, width, height: 64 },
+    });
+  }
+});
