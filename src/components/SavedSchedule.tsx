@@ -67,36 +67,44 @@ export function SavedSchedule({
         {schedule.time_zone}
       </p>
       <ol className="saved-items">
-        {document.schedule_items.map((item) => {
-          const placement = run.result.placements.find(
-            (entry) => entry.item_id === item.id,
-          );
-          const unscheduled = run.result.unscheduled_items.find(
-            (entry) => entry.item_id === item.id,
-          );
-          const insight = placement
-            ? mapTrip?.stops.find((stop) => stop.id === placement.place_id)
-                ?.insight
-            : undefined;
-          return (
-            <li key={item.id}>
-              <strong>{item.title}</strong>
-              <span>
-                {item.duration_minutes} min · {item.priority} ·{" "}
-                {item.timing_type}
-              </span>
-              <p>
-                {placement
-                  ? `${time(placement.starts_at)} – ${time(placement.ends_at)}`
-                  : `Not scheduled: ${unscheduled?.reason || "Awaiting planning."}`}
-              </p>
-              {item.place_query && (
-                <small>Place search: {item.place_query}</small>
-              )}
-              {insight && <PlaceInsight insight={insight} />}
-            </li>
-          );
-        })}
+        {document.schedule_items
+          .filter(
+            (item) =>
+              showRoute ||
+              !run.result.placements.some(
+                (placement) => placement.item_id === item.id,
+              ),
+          )
+          .map((item) => {
+            const placement = run.result.placements.find(
+              (entry) => entry.item_id === item.id,
+            );
+            const unscheduled = run.result.unscheduled_items.find(
+              (entry) => entry.item_id === item.id,
+            );
+            const insight = placement
+              ? mapTrip?.stops.find((stop) => stop.id === placement.place_id)
+                  ?.insight
+              : undefined;
+            return (
+              <li key={item.id}>
+                <strong>{item.title}</strong>
+                <span>
+                  {item.duration_minutes} min · {item.priority} ·{" "}
+                  {item.timing_type}
+                </span>
+                <p>
+                  {placement
+                    ? `${time(placement.starts_at)} – ${time(placement.ends_at)}`
+                    : `Not scheduled: ${unscheduled?.reason || "Awaiting planning."}`}
+                </p>
+                {item.place_query && (
+                  <small>Place search: {item.place_query}</small>
+                )}
+                {insight && <PlaceInsight insight={insight} />}
+              </li>
+            );
+          })}
       </ol>
       {!!run.result.calendar_events?.length && (
         <section

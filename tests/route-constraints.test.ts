@@ -53,6 +53,36 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllEnvs());
+it("routes CURRENT_LOCATION from the supplied coordinates without searching for it", async () => {
+  const draft = scheduleIntent();
+  draft.schedules[0].origin_query = "CURRENT_LOCATION";
+  draft.schedule_items = [];
+  vi.mocked(searchPlaces).mockResolvedValue({
+    source: "live",
+    places: [destination],
+  });
+  const position = { lat: 49.26, lng: -123.25 };
+  const result = await materializeSchedule(
+    draft,
+    owner,
+    undefined,
+    [],
+    position,
+  );
+  expect(result.workspace?.trip.request.origin.location).toEqual(position);
+  expect(
+    vi
+      .mocked(searchPlaces)
+      .mock.calls.some(([input]) => input.query === "CURRENT_LOCATION"),
+  ).toBe(false);
+});
+it("rejects current-location endpoints when no usable location was supplied", async () => {
+  const draft = scheduleIntent();
+  draft.schedules[0].origin_query = "CURRENT_LOCATION";
+  await expect(materializeSchedule(draft, owner)).rejects.toMatchObject({
+    code: "LOCATION_UNAVAILABLE",
+  });
+});
 it("restores omitted sidebar places and overrides model mode, endpoints, duration and priority", async () => {
   const input = constraints();
   const draft = scheduleIntent();
@@ -425,4 +455,209 @@ it("does not rediscover a rejected venue in generic route-corridor searches", as
   expect(
     result.document.schedule_runs[0].result.map_trip?.stops ?? [],
   ).toHaveLength(0);
+});
+
+it.each(["transit", "driving"] as const)(
+  "inserts first breakfast before later locked visits for %s",
+  async (transportation) => {
+    const breakfast = place("Breakfast", 49.285, -123.145);
+    const theater = place("Theater", 49.29, -123.14);
+    const grocery = place("No Frills", 49.295, -123.13);
+    vi.mocked(searchPlaces).mockImplementation(async ({ query }) => ({
+      source: "live",
+      places:
+        query === "Theater"
+          ? [theater]
+          : query === "No Frills"
+            ? [grocery]
+            : [breakfast],
+    }));
+    const input = constraints();
+    input.selectedStops = [];
+    input.transportation = transportation;
+    input.endTime = "2030-10-04T22:00:00-07:00";
+    const draft = scheduleIntent();
+    const template = draft.schedule_items[0];
+    draft.schedule_items = ["Breakfast", "Theater", "No Frills"].map(
+      (name, index) => ({
+        ...template,
+        title: name,
+        place_query: name,
+        location_scope: index === 0 ? "along_route" : "specific",
+        preferred_sequence: index,
+        order_locked: true,
+        priority: "required",
+        duration_minutes: 90,
+      }),
+    );
+    const { document, workspace } = await materializeSchedule(
+      draft,
+      owner,
+      input,
+    );
+    expect(document.schedule_runs[0].status).toBe("feasible");
+    expect(document.schedule_runs[0].result.unscheduled_items).toEqual([]);
+    expect(workspace?.trip.stops.map((stop) => stop.name)).toEqual([
+      "Breakfast",
+      "Theater",
+      "No Frills",
+    ]);
+    expect(document.schedule_runs[0].result.map_trip).toEqual(workspace?.trip);
+  },
+);
+
+it("does not accumulate echoed preferences over repeated planning updates", () => {
+  const input = constraints();
+  input.preferences = Array(5).fill("I don't like purebread bakery").join("\n");
+  let draft = scheduleIntent();
+  draft.schedules[0].preferences.notes =
+    "I don't like purebread bakery\nVegetarian food";
+  for (let iteration = 0; iteration < 5; iteration++) {
+    draft = enforceScheduleConstraints(draft, input);
+    input.preferences = draft.schedules[0].preferences.notes;
+  }
+  expect(draft.schedules[0].preferences.notes).toBe(
+    "I don't like purebread bakery\nVegetarian food",
+  );
+});
+
+it.each(["transit", "driving"] as const)(
+  "uses downtown and near-UBC qualifiers outside the corridor for %s",
+  async (transportation) => {
+    const theater = place("Downtown theater", 49.28, -123.12);
+    const grocery = place("Grocery near UBC", 49.3, -123.12);
+    const fartherGrocery = place("Farther grocery", 49.34, -123.12);
+    vi.mocked(searchPlaces).mockImplementation(async ({ query }) => ({
+      source: "live",
+      places: query.includes("downtown")
+        ? [theater]
+        : query.includes("UBC")
+          ? query === "UBC"
+            ? [destination]
+            : [fartherGrocery, grocery]
+          : [],
+    }));
+    const input = constraints();
+    input.selectedStops = [];
+    input.transportation = transportation;
+    const draft = scheduleIntent();
+    const template = draft.schedule_items[0];
+    draft.schedule_items = [
+      {
+        ...template,
+        title: "Movie Theater in Downtown",
+        place_query: "movie theater in downtown",
+        location_scope: "along_route",
+        preferred_sequence: 0,
+        order_locked: true,
+      },
+      {
+        ...template,
+        title: "No Frills near UBC",
+        place_query: "No Frills",
+        location_scope: "along_route",
+        preferred_sequence: 1,
+        order_locked: true,
+      },
+    ];
+    const { workspace, document } = await materializeSchedule(
+      draft,
+      owner,
+      input,
+    );
+    expect(workspace?.trip.stops.map((stop) => stop.id)).toEqual([
+      theater.id,
+      grocery.id,
+    ]);
+    expect(document.schedule_items[1].place_query).toBe("No Frills near UBC");
+    expect(searchPlaces).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "No Frills near UBC",
+        near: destination.location,
+        radiusMeters: 10000,
+      }),
+    );
+    expect(workspace?.trip.stops.every((stop) => !stop.locked)).toBe(true);
+  },
+);
+
+it("leaves a geographic request unresolved when every candidate is outside its area", async () => {
+  const input = constraints();
+  input.selectedStops = [];
+  const draft = scheduleIntent();
+  draft.schedule_items[0] = {
+    ...draft.schedule_items[0],
+    title: "No Frills near Destination",
+    place_query: "No Frills near Destination",
+    location_scope: "specific",
+    priority: "required",
+  };
+  vi.mocked(searchPlaces).mockResolvedValue({
+    source: "live",
+    places: [place("Distant store", 50.3, -123.12)],
+  });
+  const { document } = await materializeSchedule(draft, owner, input);
+  expect(document.schedule_items[0].place_id).toBeNull();
+  expect(document.schedule_runs[0].status).toBe("infeasible");
+});
+
+it("chooses three distinct open area cafes instead of reusing the nearest closed cafe", async () => {
+  const closed = {
+    ...place("Closed cafe", 49.29, -123.14),
+    openingHours: {
+      timeZone: "America/Vancouver",
+      checkedAt: "2030-10-04T19:00:00Z",
+      regular: { periods: [] },
+    },
+  };
+  const cafes = [
+    closed,
+    ...[1, 2, 3].map((i) => ({
+      ...place(`Open cafe ${i}`, 49.29 + i * 0.001, -123.14),
+      openingHours: {
+        timeZone: "America/Vancouver",
+        checkedAt: "2030-10-04T19:00:00Z",
+        regular: {
+          periods: [
+            {
+              open: { day: 5, hour: 8, minute: 0 },
+              close: { day: 5, hour: 20, minute: 0 },
+            },
+          ],
+        },
+      },
+    })),
+  ];
+  vi.mocked(searchPlaces).mockImplementation(async ({ query }) => ({
+    source: "live",
+    places: query === "Burnaby" ? [requiredPlace] : cafes,
+  }));
+  const input = constraints();
+  input.selectedStops = [];
+  const draft = scheduleIntent();
+  const template = draft.schedule_items[0];
+  draft.schedule_items = [0, 1, 2].map((index) => ({
+    ...template,
+    title: `Coffee shop ${index + 1} in Burnaby`,
+    place_query: "coffee shops in Burnaby",
+    preferred_sequence: index,
+    duration_minutes: 30,
+    priority: "required",
+  }));
+  const { document, workspace } = await materializeSchedule(
+    draft,
+    owner,
+    input,
+  );
+  expect(document.schedule_runs[0].status).toBe("feasible");
+  expect(workspace?.trip.stops.map((stop) => stop.id)).toEqual([
+    "Open cafe 1",
+    "Open cafe 2",
+    "Open cafe 3",
+  ]);
+  expect(document.schedule_items.map((item) => item.place_id)).toEqual([
+    "Open cafe 1",
+    "Open cafe 2",
+    "Open cafe 3",
+  ]);
 });

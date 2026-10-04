@@ -37,6 +37,8 @@ const googlePlacesSchema = z.object({
     .default([]),
 });
 export async function searchPlaces(input: z.infer<typeof placeSearchSchema>) {
+  const noFrills = /\bno\s*frills\b/i.test(input.query);
+  const cinema = /\b(?:movie\s+theat(?:er|re)|cinema)\b/i.test(input.query);
   if (mapsMode() === "demo") {
     const all = [
       ...demoPlaces,
@@ -70,7 +72,12 @@ export async function searchPlaces(input: z.infer<typeof placeSearchSchema>) {
         .map((field) => `places.${field}`)
         .join(",")}`,
       {
-        textQuery: input.query,
+        textQuery: noFrills
+          ? input.query.replace(/\bno\s*frills\b/gi, "No Frills grocery store")
+          : input.query,
+        ...(cinema
+          ? { includedType: "movie_theater", strictTypeFiltering: true }
+          : {}),
         pageSize: 10,
         ...(input.near
           ? {
@@ -103,7 +110,12 @@ export async function searchPlaces(input: z.infer<typeof placeSearchSchema>) {
   return {
     source: "live" as const,
     places: result.places
-      .filter((p) => p.location)
+      .filter(
+        (p) =>
+          p.location &&
+          (!noFrills ||
+            /nofrills/i.test(p.displayName.text.replace(/[^a-z]/gi, ""))),
+      )
       .map((p) =>
         candidatePlaceSchema.parse({
           id: p.id,

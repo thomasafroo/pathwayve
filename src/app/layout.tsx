@@ -1,18 +1,25 @@
 import type { Metadata } from "next";
-import "@fontsource/dm-sans/latin-400.css";
-import "@fontsource/dm-sans/latin-500.css";
-import "@fontsource/dm-sans/latin-600.css";
+import localFont from "next/font/local";
 import "./globals.css";
 import "./workspace.css";
+
+const manrope = localFont({
+  src: "../../public/brand/Manrope-VariableFont_wght.ttf",
+  display: "swap",
+  variable: "--font-manrope",
+  weight: "200 800",
+});
+
 export const metadata: Metadata = {
-  title: "PathWayve | Plan your trip",
+  applicationName: "pathwayve",
+  title: "pathwayve | Plan your trip",
   description: "Plan routes, choose stops, and make time for your day.",
 };
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={manrope.variable}>
       <body>{children}</body>
     </html>
   );

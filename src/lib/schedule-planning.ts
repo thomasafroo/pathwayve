@@ -1,4 +1,6 @@
 import "server-only";
+import { scopedPlaceQuery, geographicAnchor } from "./place-scope";
+import { distanceMeters } from "./routes";
 import { visitWindow } from "./opening-hours";
 import { refreshPlaceHours } from "./place-hours";
 import { randomUUID } from "node:crypto";
@@ -39,6 +41,7 @@ export async function materializeSchedule(
   owner: string,
   constraints?: PlanningConstraints | null,
   calendarEvents: CalendarEvent[] = [],
+  currentPosition?: CandidatePlace["location"] | null,
 ): Promise<{ document: ScheduleDocument; workspace: WorkspaceTrip | null }> {
   draft = enforceScheduleConstraints(draft, constraints);
   const intent = draft.schedules[0];
@@ -67,6 +70,20 @@ export async function materializeSchedule(
     near?: CandidatePlace["location"],
     excludeRejected = false,
   ) => {
+    if (query === "CURRENT_LOCATION") {
+      if (!currentPosition)
+        throw new AppError(
+          "LOCATION_UNAVAILABLE",
+          "Enable Follow my location on the map and wait for a position, or enter a starting point.",
+          422,
+        );
+      return {
+        id: `coordinate:${currentPosition.lat},${currentPosition.lng}`,
+        name: "Current location",
+        location: { lat: currentPosition.lat, lng: currentPosition.lng },
+        category: "attraction" as const,
+      };
+    }
     const response = await searchPlaces({
       query,
       category: "attraction",
@@ -128,19 +145,94 @@ export async function materializeSchedule(
   }));
   const places = new Map<string, CandidatePlace>();
   const genericIds = new Set<string>();
+  const areaCandidates = new Map<string, CandidatePlace[]>();
   // Sidebar provider IDs/coordinates are authoritative: never search their names again.
   for (const [index, item] of items.entries()) {
     const model = draft.schedule_items[index];
+    // Preserve the requested identity even if the model shortened its search query.
+    if (
+      /\bno\s*frills\b/i.test(item.title) &&
+      !/\bno\s*frills\b/i.test(item.place_query ?? "")
+    ) {
+      item.place_query = item.title;
+    } else if (
+      /\b(?:movie\s+theat(?:er|re)|cinema)\b/i.test(item.title) &&
+      !/\b(?:movie\s+theat(?:er|re)|cinema)\b/i.test(item.place_query ?? "")
+    ) {
+      item.place_query = item.title;
+    }
+    const geographicQuery = item.place_query
+      ? scopedPlaceQuery(item.title, item.place_query)
+      : null;
+    if (geographicQuery) item.place_query = geographicQuery;
     const chosen = constraints?.selectedStops.find(
       (stop) => stop.id === model.selected_stop_id,
     );
     if (chosen) {
       item.place_id = chosen.id;
       places.set(item.id, await refreshPlaceHours(chosen));
-    } else if (item.place_query && model.location_scope === "along_route") {
+    } else if (
+      item.place_query &&
+      model.location_scope === "along_route" &&
+      !geographicQuery
+    ) {
       genericIds.add(item.id);
     } else if (item.place_query) {
-      const place = await find(item.place_query, undefined, true);
+      const anchorQuery = geographicQuery && geographicAnchor(geographicQuery);
+      let place: CandidatePlace | null;
+      if (anchorQuery) {
+        const matchesEndpoint = (query: string, name: string) => {
+          const normalized = anchorQuery.toLowerCase();
+          return [query, name].some((value) => {
+            const text = value.toLowerCase();
+            return (
+              text === normalized ||
+              (text.length >= 3 && normalized.startsWith(`${text} `))
+            );
+          });
+        };
+        const anchor = matchesEndpoint(
+          intent.destination_query,
+          destination.name,
+        )
+          ? destination
+          : matchesEndpoint(intent.origin_query, origin.name)
+            ? origin
+            : await find(anchorQuery, destination.location);
+        if (!anchor) {
+          place = null;
+        } else {
+          const radiusMeters = /downtown/i.test(anchorQuery) ? 5000 : 10000;
+          const response = await searchPlaces({
+            query: item.place_query,
+            category: "attraction",
+            budget: "any",
+            near: anchor.location,
+            radiusMeters,
+          });
+          const candidates = response.places
+            .filter((candidate) => !excludedPlaceIds.includes(candidate.id))
+            .map((candidate) => ({
+              candidate,
+              distance: distanceMeters(anchor.location, candidate.location),
+            }))
+            .filter(({ distance }) => distance <= radiusMeters)
+            .sort((a, b) => a.distance - b.distance)
+            .map(({ candidate }) => candidate);
+          place = candidates[0] ?? null;
+          // A category request asks us to recommend a venue, not commit to the
+          // nearest result regardless of closure or repeated visits.
+          if (
+            /^(?:(?:first|second|third|another)\s+)?(?:coffee shops?|caf[eé]s?|restaurants?|bookstores?|bakeries)(?:\s|$)/i.test(
+              item.place_query,
+            )
+          ) {
+            areaCandidates.set(item.id, candidates);
+          }
+        }
+      } else {
+        place = await find(item.place_query, undefined, true);
+      }
       if (place) {
         item.place_id = place.id;
         places.set(item.id, place);
@@ -358,18 +450,71 @@ export async function materializeSchedule(
   };
   try {
     for (const item of ordered) {
-      if (
-        item.order_locked &&
-        item.preferred_sequence !== result.placements.length
-      ) {
-        unavailable(
-          item,
-          "ORDER_LOCK_CONFLICT",
-          "The locked position cannot be preserved because an earlier activity could not be placed.",
-        );
-        continue;
+      let place = places.get(item.id);
+      const candidates = areaCandidates.get(item.id);
+      if (candidates) {
+        place = undefined;
+        for (const candidate of candidates) {
+          if (stops.some((stop) => stop.id === candidate.id)) continue;
+          try {
+            const candidateLeg = await computeScheduleLeg(
+              cursor,
+              candidate,
+              request,
+              new Date(time).toISOString(),
+            );
+            const arrival = time + candidateLeg.durationMinutes * 60000;
+            const requestedStart = item.fixed_start_at
+              ? Date.parse(item.fixed_start_at)
+              : Math.max(
+                  arrival,
+                  item.earliest_start_at
+                    ? Date.parse(item.earliest_start_at)
+                    : arrival,
+                );
+            if (requestedStart < arrival) continue;
+            const window = visitWindow(
+              candidate,
+              requestedStart,
+              item.duration_minutes,
+              Math.min(
+                Date.parse(schedule.ends_at),
+                item.latest_end_at ? Date.parse(item.latest_end_at) : Infinity,
+              ),
+              !!item.fixed_start_at,
+            );
+            if (!window) continue;
+            const finish = window.start + item.duration_minutes * 60000;
+            const onward = await computeScheduleLeg(
+              candidate,
+              destination,
+              request,
+              new Date(finish).toISOString(),
+            );
+            if (
+              finish + onward.durationMinutes * 60000 >
+              Date.parse(schedule.ends_at)
+            )
+              continue;
+            place = candidate;
+            places.set(item.id, candidate);
+            item.place_id = candidate.id;
+            break;
+          } catch (error) {
+            if (!(error instanceof AppError && error.code === "NO_ROUTE"))
+              throw error;
+          }
+        }
+        if (!place) {
+          item.place_id = null;
+          unavailable(
+            item,
+            "NO_FEASIBLE_AREA_PLACE",
+            "No distinct place from the area search results fits this visit’s opening hours, travel and time window. Try a shorter visit or another area.",
+          );
+          continue;
+        }
       }
-      const place = places.get(item.id);
       if (!place) {
         unavailable(
           item,
@@ -496,7 +641,10 @@ export async function materializeSchedule(
         waitMinutes: Math.ceil((start - arrival) / 60000),
         durationMinutes: item.duration_minutes,
         priority: item.priority,
-        locked: item.order_locked,
+        // Requested sequence controls planning, not the user's editing permissions.
+        locked:
+          constraints?.selectedStops.find((stop) => stop.id === place.id)
+            ?.locked ?? false,
         reason: item.title,
       });
       cursor = place;
@@ -606,7 +754,7 @@ export async function materializeSchedule(
   // cannot be represented faithfully by the older editable TripState contract.
   const canUseWorkspace =
     calendarEvents.length === 0 &&
-    status === "feasible" &&
+    !failed &&
     items.every(
       (item) => item.kind === "visit" && item.timing_type === "flexible",
     );

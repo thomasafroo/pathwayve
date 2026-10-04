@@ -145,7 +145,14 @@ export async function discoverRoutePlace({
   const unique = new Map<string, CandidatePlace>();
   for (const response of responses)
     for (const place of response.places) unique.set(place.id, place);
-  const lastLocked = anchors.findLastIndex((a) => a.item.order_locked);
+  // Sequence numbers describe the full requested itinerary, not indices in the
+  // reduced list of already resolved anchors. A first breakfast belongs before
+  // a later locked theater, rather than after the last locked anchor.
+  const insertionIndex = anchors.filter(
+    (anchor) =>
+      (anchor.item.preferred_sequence ?? Infinity) <
+      (item.preferred_sequence ?? Infinity),
+  ).length;
   const candidates = [...unique.values()]
     .filter(
       (place) =>
@@ -163,8 +170,7 @@ export async function discoverRoutePlace({
         .filter(
           (p) =>
             p.distance <= radiusMeters &&
-            p.index > lastLocked &&
-            (!item.order_locked || p.index === item.preferred_sequence),
+            (!item.order_locked || p.index === insertionIndex),
         );
       const nearest = possible.sort((a, b) => a.distance - b.distance)[0];
       return nearest ? [{ place, ...nearest }] : [];

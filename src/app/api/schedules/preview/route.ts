@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { usablePlanningLocation } from "@/lib/planning-location";
 import { promptRequestSchema } from "@/types/schedule";
 import { generateSchedule } from "@/lib/schedule-gemini";
 import { materializeSchedule } from "@/lib/schedule-planning";
@@ -12,6 +13,7 @@ export async function POST(request: Request) {
     checkOrigin(request);
     const input = promptRequestSchema.parse(await readJson(request));
     const owner = await scheduleOwner();
+    const currentPosition = usablePlanningLocation(input.liveLocation);
     const calendar = input.googleCalendar
       ? await loadGoogleEvents(owner, input.googleCalendar)
       : null;
@@ -33,6 +35,7 @@ export async function POST(request: Request) {
       randomUUID(),
       input.constraints,
       calendar?.events,
+      currentPosition,
     );
   });
 }

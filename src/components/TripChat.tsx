@@ -3,14 +3,21 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { TripRequest } from "@/types/trip";
 import { workspaceSchema, type WorkspaceTrip } from "@/types/workspace";
 import type { ScheduleDocument } from "@/types/schedule";
+import { PlanningCompanion } from "./PlanningCompanion";
+import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
 import type { CalendarSelection } from "@/types/calendar";
 
 import type { PlanningConstraints } from "@/types/planning-constraints";
+import {
+  usablePlanningLocation,
+  type PlanningLocation,
+} from "@/lib/planning-location";
 
 export type ChatMessage = { role: "user" | "assistant"; text: string };
 
 export function TripChat({
+  liveLocation,
   compact,
   messages,
   onMessages,
@@ -23,6 +30,7 @@ export function TripChat({
   googleCalendar,
   onClearCalendar,
 }: {
+  liveLocation?: PlanningLocation;
   compact: boolean;
   messages: ChatMessage[];
   onMessages: (update: (previous: ChatMessage[]) => ChatMessage[]) => void;
@@ -41,8 +49,12 @@ export function TripChat({
   const [draft, setDraft] = useState(
     googleCalendar ? "Plan my day around my Google Calendar events. " : "",
   );
+  const [newTrip, setNewTrip] = useState(false);
   const [error, setError] = useState("");
   const [planning, setPlanning] = useState(false);
+  const [planOutcome, setPlanOutcome] = useState<"ready" | "review" | null>(
+    null,
+  );
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [listening, setListening] = useState(false);
@@ -81,7 +93,7 @@ export function TripChat({
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
-  }, [messages, error]);
+  }, [messages, error, planning, planOutcome]);
   useEffect(() => {
     // React Strict Mode runs this effect's cleanup once during development.
     // Reset the flag when the effect is active so completed recordings are not
@@ -104,11 +116,33 @@ export function TripChat({
     sending.current = true;
     onBusy(true);
     setPlanning(true);
+    setPlanOutcome(null);
     setError("");
     requestId.current ??= crypto.randomUUID();
-    const combined = [...conversation, `User: ${text}`].join("\n");
+    // A complete journey description replaces the previous trip. Short follow-ups
+    // continue editing it; the checkbox also handles less explicit new requests.
+    const newDescription =
+      /\b(?:heading|going|travel(?:ling|ing)?|trip)\s+from\b[\s\S]+?\bto\s+\S/i.test(
+        text,
+      ) || /^from\s+.+?\s+to\s+\S/i.test(text);
+    const replaceTrip = newTrip || newDescription;
+    const combined = [
+      ...(newDescription ? [] : conversation),
+      `User: ${text}`,
+    ].join("\n");
     try {
-      const constraints = getConstraints();
+      const currentConstraints = getConstraints();
+      const constraints =
+        replaceTrip && currentConstraints
+          ? {
+              ...currentConstraints,
+              selectedStops: [],
+              origin: null,
+              destination: null,
+              startTime: undefined,
+              endTime: undefined,
+            }
+          : currentConstraints;
       const snapshot = JSON.stringify(constraints);
       if (snapshot !== constraintSnapshot.current) {
         requestId.current = crypto.randomUUID();
@@ -123,7 +157,11 @@ export function TripChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: combined,
-          context,
+          liveLocation: {
+            tracking: liveLocation?.tracking ?? false,
+            position: usablePlanningLocation(liveLocation),
+          },
+          context: replaceTrip ? null : context,
           googleCalendar,
           constraints,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -131,19 +169,21 @@ export function TripChat({
         }),
       });
       const data = await response.json();
+      if (unmounted.current) return;
       if (!response.ok)
         throw new Error(
           data.error?.message ||
             "We couldn’t plan your schedule. Please try again.",
         );
       if (data.clarification) {
+        setNewTrip(replaceTrip);
         onMessages((previous) => [
           ...previous,
           { role: "user", text },
           { role: "assistant", text: data.clarification },
         ]);
         setConversation([
-          ...conversation,
+          ...(newDescription ? [] : conversation),
           `User: ${text}`,
           `Assistant clarification: ${data.clarification}`,
         ]);
@@ -158,6 +198,7 @@ export function TripChat({
         ? workspaceSchema.parse(data.workspace)
         : null;
       onSaved(document, workspace);
+      setPlanOutcome(run.status === "feasible" ? "ready" : "review");
       const resultingPlaceIds = new Set(
         document.schedule_items.map((item) => item.place_id).filter(Boolean),
       );
@@ -180,15 +221,17 @@ export function TripChat({
         },
       ]);
       setDraft("");
+      setNewTrip(false);
       setConversation([]);
       requestId.current = null;
     } catch (err) {
+      if (unmounted.current) return;
       // Keep the draft and request id so a retry is idempotent.
       setError(err instanceof Error ? err.message : "Unable to plan schedule.");
     } finally {
       sending.current = false;
       setPlanning(false);
-      onBusy(false);
+      if (!unmounted.current) onBusy(false);
     }
   }
   async function transcribe(audio: Blob) {
@@ -347,6 +390,7 @@ export function TripChat({
     }
   }
   function startOver() {
+    setPlanOutcome(null);
     setConversation([]);
     setDraft("");
     setError("");
@@ -356,7 +400,7 @@ export function TripChat({
   return (
     <section
       id="trip-chat"
-      className={`trip-chat ${compact ? "compact" : ""}`}
+      className={`trip-chat ${compact ? "compact" : ""} ${planning || planOutcome ? "has-companion" : ""}`}
       aria-label="Trip chat"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -367,7 +411,7 @@ export function TripChat({
     >
       <header>
         <h2>
-          <Icon name="sparkle" size={15} />
+          <BrandLogo compact className="chat-brand-mark" />
           Plan with PathWayve
         </h2>
         <div className="chat-header-actions">
@@ -403,8 +447,8 @@ export function TripChat({
             {message.text}
           </p>
         ))}
-        {planning && (
-          <p className="chat-message assistant pending">Planning…</p>
+        {(planning || planOutcome) && (
+          <PlanningCompanion phase={planning ? "planning" : planOutcome!} />
         )}
         {listening && (
           <p className="chat-message assistant pending">
@@ -446,6 +490,26 @@ export function TripChat({
         Required and locked stops are protected. Ask to remove optional stops in
         chat. General place requests search within your route radius.
       </p>
+      <div className="chat-mode-bar">
+        <span>
+          {newTrip
+            ? "Fresh start · replaces the current trip"
+            : "Keep building on your current trip"}
+        </span>
+        <label className="chat-new-trip">
+          <input
+            type="checkbox"
+            checked={newTrip}
+            disabled={busy}
+            onChange={(event) => {
+              setNewTrip(event.target.checked);
+              setConversation([]);
+            }}
+          />
+          <span className="chat-mode-switch" aria-hidden="true" />
+          Start a new trip
+        </label>
+      </div>
       <form className="chat-composer" onSubmit={submit}>
         <textarea
           ref={composer}
