@@ -25,7 +25,14 @@ async function postTrip(path: string, body: unknown): Promise<TripState> {
 // Short-lived, tab-local versions; never reuse traffic/transit estimates indefinitely.
 const planCache = new Map<string, { trip: TripState; expires: number }>();
 const pendingPlans = new Map<string, Promise<TripState>>();
+let cacheGeneration = 0;
+export function clearPlanCache() {
+  cacheGeneration++;
+  planCache.clear();
+  pendingPlans.clear();
+}
 export async function cachedPlan(request: TripRequest): Promise<TripState> {
+  const generation = cacheGeneration;
   const key = JSON.stringify(request);
   const cached = planCache.get(key);
   if (cached && cached.expires > Date.now())
@@ -36,6 +43,7 @@ export async function cachedPlan(request: TripRequest): Promise<TripState> {
   pendingPlans.set(key, work);
   try {
     const trip = await work;
+    if (generation !== cacheGeneration) return trip;
     if (planCache.size >= 20) planCache.delete(planCache.keys().next().value!);
     planCache.set(key, {
       trip: structuredClone(trip),
@@ -43,7 +51,7 @@ export async function cachedPlan(request: TripRequest): Promise<TripState> {
     });
     return trip;
   } finally {
-    pendingPlans.delete(key);
+    if (pendingPlans.get(key) === work) pendingPlans.delete(key);
   }
 }
 // Keep transport outside visual components. Future service adapters belong here.

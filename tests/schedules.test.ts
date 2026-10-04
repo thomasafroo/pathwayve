@@ -237,9 +237,10 @@ describe("placing saved intentions", () => {
       "No usable route",
     );
   });
-  it("keeps a locked position unscheduled if an earlier activity cannot fit", async () => {
+  it("routes later ordered stops when an earlier required activity cannot fit", async () => {
     const draft = scheduleIntent();
     draft.schedule_items[0].place_query = "Missing";
+    draft.schedule_items[0].priority = "required";
     draft.schedule_items.push({
       ...draft.schedule_items[0],
       title: "Locked second stop",
@@ -252,10 +253,11 @@ describe("placing saved intentions", () => {
       owner,
     );
     expect(document.schedule_runs[0].status).toBe("infeasible");
-    expect(document.schedule_runs[0].result.placements).toHaveLength(0);
-    expect(
-      document.schedule_runs[0].result.unscheduled_items[1].reason_code,
-    ).toBe("ORDER_LOCK_CONFLICT");
+    expect(document.schedule_runs[0].result.placements).toHaveLength(1);
+    expect(document.schedule_runs[0].result.unscheduled_items).toHaveLength(1);
+    expect(document.schedule_runs[0].result.map_trip?.stops[0].name).toBe(
+      "Library",
+    );
   });
   it("respects fixed appointments and computes travel independently", async () => {
     const draft = scheduleIntent();

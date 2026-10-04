@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { planningLocationSchema } from "@/lib/planning-location";
 import { tripRequestSchema, tripStateSchema, type TripState } from "./trip";
 import { workspaceSchema } from "./workspace";
 import { planningConstraintsSchema } from "./planning-constraints";
@@ -73,6 +74,7 @@ export const generatedScheduleSchema = z.object({
 });
 export type GeneratedSchedule = z.infer<typeof generatedScheduleSchema>;
 export const promptRequestSchema = z.object({
+  liveLocation: planningLocationSchema.nullable().optional(),
   prompt: z.string().trim().min(3).max(4000),
   timeZone: zone,
   requestId: z.uuid(),

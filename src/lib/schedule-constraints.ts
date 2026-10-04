@@ -1,4 +1,5 @@
 import "server-only";
+import { mergePreferenceNotes } from "./preference-notes";
 import { validateIntent, type GeneratedSchedule } from "@/types/schedule";
 import type { PlanningConstraints } from "@/types/planning-constraints";
 import { AppError } from "./server/http";
@@ -7,7 +8,18 @@ export function enforceScheduleConstraints(
   draft: GeneratedSchedule,
   constraints?: PlanningConstraints | null,
 ): GeneratedSchedule {
-  if (!constraints || draft.clarification) return draft;
+  if (draft.clarification) return draft;
+  draft = {
+    ...draft,
+    schedules: draft.schedules.map((schedule) => ({
+      ...schedule,
+      preferences: {
+        ...schedule.preferences,
+        notes: mergePreferenceNotes(schedule.preferences.notes),
+      },
+    })),
+  };
+  if (!constraints) return draft;
   const { selectedStops } = constraints;
   const matches = (
     item: GeneratedSchedule["schedule_items"][number],
@@ -90,10 +102,10 @@ export function enforceScheduleConstraints(
               ...intent.preferences.interests,
             ]),
           ].slice(0, 20),
-          notes: [constraints.preferences, intent.preferences.notes]
-            .filter(Boolean)
-            .join("\n")
-            .slice(0, 1000),
+          notes: mergePreferenceNotes(
+            constraints.preferences,
+            intent.preferences.notes,
+          ),
         },
       },
     ],

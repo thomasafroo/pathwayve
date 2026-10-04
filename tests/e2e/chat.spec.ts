@@ -41,6 +41,11 @@ const document = {
               location: { lat: 49.26, lng: -123.2 },
             },
             transportation: "transit",
+            startTime: "2030-10-04T13:00:00-07:00",
+            endTime: "2030-10-04T18:00:00-07:00",
+            timeZone: "America/Vancouver",
+            activities: [],
+            preferences: "",
           },
           stops: [],
           legs: [
@@ -85,6 +90,38 @@ async function openChat(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Open trip chat" }).click();
   return page.getByRole("region", { name: "Trip chat", exact: true });
 }
+
+test("Clear everything works during generation and ignores the late result", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/schedules/preview", async (route) => {
+    await held;
+    await route.fulfill({ json: { document, workspace: null } });
+  });
+  await page.goto("/");
+  const chat = await openChat(page);
+  await chat.getByLabel("Chat message").fill("Plan a day");
+  const request = page.waitForRequest("**/api/schedules/preview");
+  await chat.getByRole("button", { name: "Send message" }).click();
+  await request;
+  await page
+    .getByRole("button", { name: "Clear everything", exact: true })
+    .click();
+  const response = page.waitForResponse("**/api/schedules/preview");
+  release();
+  await response;
+  await expect(
+    page.getByRole("complementary", { name: "Itinerary panel" }),
+  ).toHaveCount(0);
+  await openChat(page);
+  await expect(page.getByRole("log")).not.toContainText(
+    "Coffee and study time",
+  );
+});
 
 test("chat panel previews a schedule, then explicitly saves and reopens it", async ({
   page,
@@ -337,4 +374,73 @@ test("map enters and exits fullscreen and supports embedded-browser fallback", a
   await expect(
     page.getByRole("button", { name: "Enter fullscreen", exact: true }),
   ).toBeFocused();
+});
+
+test("partial schedule shows routed places and unresolved requests on the left", async ({
+  page,
+}) => {
+  const partial = structuredClone(document);
+  Object.assign(partial.schedule_runs[0], { status: "infeasible" });
+  Object.assign(partial.schedule_runs[0].result.map_trip, {
+    arrivalTime: "2030-10-04T17:00:00-07:00",
+    lastUpdated: "2030-10-04T12:00:00-07:00",
+    warnings: [],
+    summary: "Partial trip",
+    status: "ready",
+    stops: [
+      {
+        id: "theater",
+        name: "Downtown theater",
+        category: "attraction",
+        location: { lat: 49.28, lng: -123.12 },
+        arrivalTime: "2030-10-04T14:00:00-07:00",
+        durationMinutes: 90,
+        priority: "required",
+        locked: true,
+        reason: "Movie",
+      },
+    ],
+  });
+  await page.route("**/api/schedules/preview", (route) =>
+    route.fulfill({ json: { document: partial, workspace: null } }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  await page.getByLabel("Chat message").fill("Breakfast then a movie");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".chosen-stops")).toContainText("Downtown theater");
+  await expect(
+    page.getByRole("region", { name: "Unscheduled activities" }),
+  ).toContainText("Study for exam");
+  await expect(page.getByLabel("Departure", { exact: true })).not.toHaveValue(
+    "",
+  );
+});
+
+test("map companion animates while planning and celebrates only a completed route", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/schedules/preview", async (route) => {
+    await held;
+    await route.fulfill({ json: { document, workspace: null } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  await page.locator(".chat-new-trip").click();
+  await expect(
+    page.getByLabel("Start a new trip", { exact: true }),
+  ).toBeChecked();
+  await page.getByLabel("Chat message").fill("Plan my day");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".planning-companion.planning")).toBeVisible();
+  await expect(page.locator(".companion-bulb")).toHaveCount(0);
+  await page.screenshot({ path: "/tmp/pathwayve-planning-companion.png" });
+  release();
+  await expect(page.locator(".planning-companion.ready")).toBeVisible();
+  await expect(page.locator(".companion-bulb")).toBeVisible();
+  await page.screenshot({ path: "/tmp/pathwayve-planning-ready.png" });
 });

@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
+import type { PlanningLocation } from "@/lib/planning-location";
 import { useRef, useState } from "react";
+import { BrandLogo } from "./BrandLogo";
 import type { Location, TripEvent, TripRequest } from "@/types/trip";
 import type { TripModification, WorkspaceTrip } from "@/types/workspace";
 import {
@@ -9,7 +11,7 @@ import {
   receiveReplan,
   validateWorkspace,
 } from "@/lib/trip-workspace";
-import { tripClient } from "@/lib/trip-client";
+import { clearPlanCache, tripClient } from "@/lib/trip-client";
 import { TripForm, type TripFormHandle } from "./TripForm";
 import { Map } from "./Map";
 import { Itinerary } from "./Itinerary";
@@ -21,15 +23,43 @@ import { WeatherCard } from "./WeatherCard";
 import { TripChat, type ChatMessage } from "./TripChat";
 import { SavedSchedule } from "./SavedSchedule";
 import type { ScheduleDocument } from "@/types/schedule";
-import { PlaceSearch } from "./PlaceSearch";
 import { AccountControls } from "./AccountControls";
-import type { CandidatePlace } from "@/types/trip";
 import { CalendarDialog } from "./CalendarDialog";
 import { savedScheduleCalendar, workspaceCalendar } from "@/lib/calendar";
 import type { CalendarSelection } from "@/types/calendar";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
+  const [session, setSession] = useState(0);
+  return (
+    <PlannerSession
+      key={session}
+      mode={mode}
+      onClear={() => {
+        clearPlanCache();
+        try {
+          sessionStorage.removeItem("pathwayve.pending-save.v1");
+          localStorage.removeItem("pathwayve-preferences-v1");
+        } catch {
+          /* Reset the visible workspace even if storage is unavailable. */
+        }
+        setSession((value) => value + 1);
+      }}
+    />
+  );
+}
+
+function PlannerSession({
+  mode,
+  onClear,
+}: {
+  mode: "demo" | "live";
+  onClear: () => void;
+}) {
   const [documentSaved, setDocumentSaved] = useState(false);
+  const [liveLocation, setLiveLocation] = useState<PlanningLocation>({
+    tracking: false,
+    position: null,
+  });
   const tripForm = useRef<TripFormHandle>(null);
   const [formVersion, setFormVersion] = useState(0);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -42,12 +72,11 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [savedDocument, setSavedDocument] = useState<ScheduleDocument | null>(
     null,
   );
-  const [mapSearchOpen, setMapSearchOpen] = useState(false);
-  const [pendingPlace, setPendingPlace] = useState<CandidatePlace | null>(null);
   const chatTrigger = useRef<HTMLButtonElement>(null);
   const [state, setState] = useState<WorkspaceTrip | null>(null);
   const [history, setHistory] = useState<WorkspaceTrip[]>([]);
   const [busy, setBusy] = useState(false);
+  const planRevision = useRef(0);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -105,10 +134,12 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     }
   }
   async function onPlan(request: TripRequest) {
+    const revision = ++planRevision.current;
     setBusy(true);
     setError("");
     try {
       const planned = await tripClient.plan(request);
+      if (revision !== planRevision.current) return;
       const next = state
         ? validateWorkspace({
             trip: { ...planned, id: state.trip.id },
@@ -124,11 +155,12 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
       setMessage(next.trip.summary);
       setItineraryOpen(true);
     } catch (err) {
+      if (revision !== planRevision.current) return;
       setError(
         err instanceof Error ? err.message : "We couldn't plan your day.",
       );
     } finally {
-      setBusy(false);
+      if (revision === planRevision.current) setBusy(false);
     }
   }
   async function onReplan(event: TripEvent) {
@@ -239,12 +271,17 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     <div className={`maps-workspace ${showItinerary ? "has-itinerary" : ""}`}>
       <header className="workspace-header">
         <Link href="/" className="workspace-brand" aria-label="PathWayve home">
-          <span>
-            <Icon name="route" size={18} />
-          </span>
-          PathWayve
+          <BrandLogo className="workspace-wordmark" priority />
         </Link>
         <div className="workspace-heading-actions">
+          <button
+            type="button"
+            className="secondary"
+            onClick={onClear}
+            title="Clear the current trip, chat, preferences and pending draft. Saved schedules are kept."
+          >
+            Clear everything
+          </button>
           <button
             type="button"
             className="secondary"
@@ -281,7 +318,6 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             }}
             onSignOut={() => {
               setFormVersion((version) => version + 1);
-              setPendingPlace(null);
               setState(null);
               setSavedDocument(null);
               setDocumentSaved(false);
@@ -309,9 +345,41 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               busy={busy}
               onPlan={onPlan}
               mode={mode}
-              currentTrip={trip}
-              pendingPlace={pendingPlace}
+              currentTrip={mapTrip}
             />
+            {savedDocument &&
+              savedDocument.schedule_runs[0].result.unscheduled_items.length >
+                0 && (
+                <section
+                  aria-label="Unscheduled activities"
+                  className="preference-details"
+                >
+                  <h3>Still needs planning</h3>
+                  <p>
+                    These requests are not included in the mapped route yet.
+                  </p>
+                  {savedDocument.schedule_runs[0].result.unscheduled_items.map(
+                    (missing) => (
+                      <div key={missing.item_id}>
+                        <strong>
+                          {
+                            savedDocument.schedule_items.find(
+                              (item) => item.id === missing.item_id,
+                            )?.title
+                          }
+                        </strong>
+                        <p>{missing.reason}</p>
+                      </div>
+                    ),
+                  )}
+                </section>
+              )}
+            {!state && mapTrip && (
+              <p>
+                Showing the schedule’s places. Editing creates a route copy; use
+                chat to preserve appointment and task constraints.
+              </p>
+            )}
           </div>
           <div className="plan-submit">
             <p aria-live="polite">
@@ -333,6 +401,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
         </aside>
         <div className="map-canvas">
           <Map
+            onLocationChange={setLiveLocation}
             trip={mapTrip}
             onUseLocation={
               busy
@@ -352,30 +421,6 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             }}
             onCancelPick={() => setPicking(false)}
           />
-          <div className="map-search">
-            <button
-              className="map-search-trigger"
-              aria-expanded={mapSearchOpen}
-              onClick={() => setMapSearchOpen(!mapSearchOpen)}
-            >
-              <Icon name="search" size={18} />
-              <span>Search places{trip ? " along the route" : ""}</span>
-              <Icon name={mapSearchOpen ? "close" : "plus"} size={16} />
-            </button>
-            {mapSearchOpen && (
-              <div className="map-search-results">
-                <PlaceSearch
-                  label="Search map places"
-                  disabled={busy}
-                  near={trip?.request.destination.location}
-                  onSelect={(place) => {
-                    setPendingPlace({ ...place });
-                    setMapSearchOpen(false);
-                  }}
-                />
-              </div>
-            )}
-          </div>
           {error && (
             <div role="alert" className="workspace-error">
               <span>{error}</span>
@@ -392,13 +437,17 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             <TripChat
               googleCalendar={googleCalendar}
               onClearCalendar={() => setGoogleCalendar(null)}
+              liveLocation={liveLocation}
               compact={showItinerary}
               messages={chatMessages}
               onMessages={setChatMessages}
               context={trip?.request ?? null}
               getConstraints={() => tripForm.current?.getConstraints() ?? null}
               busy={busy}
-              onBusy={setBusy}
+              onBusy={(value) => {
+                if (value) planRevision.current++;
+                setBusy(value);
+              }}
               onSaved={(document, workspace) => {
                 setDocumentSaved(false);
                 setFormVersion((version) => version + 1);
@@ -509,22 +558,28 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             </header>
             <div className="itinerary-scroll">
               {savedDocument && (
-                <SavedSchedule
-                  document={savedDocument}
-                  persisted={documentSaved}
-                  onImport={importSchedule}
-                  onDelete={() => void deleteCurrent()}
-                  busy={busy}
-                  showRoute={false}
-                  onClose={() => setSavedDocument(null)}
-                />
+                <details className="itinerary-extras">
+                  <summary>Schedule details & export</summary>
+                  <SavedSchedule
+                    document={savedDocument}
+                    persisted={documentSaved}
+                    onImport={importSchedule}
+                    onDelete={() => void deleteCurrent()}
+                    busy={busy}
+                    showRoute={false}
+                    onClose={() => setSavedDocument(null)}
+                  />
+                </details>
               )}
               <div className="schedule-status">
                 <Icon name="check" size={16} />
                 <span>
-                  {spare > 0
-                    ? `Fits your schedule · ${spare} min remaining`
-                    : "No time remaining"}
+                  {savedDocument &&
+                  savedDocument.schedule_runs[0].status !== "feasible"
+                    ? "Some activities still need planning — review unresolved requests on the left."
+                    : spare > 0
+                      ? `Fits your schedule · ${spare} min remaining`
+                      : "No time remaining"}
                 </span>
               </div>
               <p role="status" className="change-message" aria-live="polite">

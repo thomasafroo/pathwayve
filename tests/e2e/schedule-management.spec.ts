@@ -47,6 +47,18 @@ test("manual trip can be saved, reopened, imported as a copy, and deleted", asyn
 }) => {
   const saved = new Map<string, ReturnType<typeof savedDocument>>();
   const deleted: string[] = [];
+  // Saved-schedule actions live in a collapsed section under the itinerary.
+  const openScheduleDetails = async () => {
+    const details = page
+      .locator("details.itinerary-extras")
+      .filter({ hasText: "Schedule details & export" });
+    if (
+      !(await details.evaluate(
+        (element) => (element as HTMLDetailsElement).open,
+      ))
+    )
+      await details.locator("summary").click();
+  };
   await page.route("**/api/auth/get-session**", (route) =>
     route.fulfill({
       json: {
@@ -93,6 +105,7 @@ test("manual trip can be saved, reopened, imported as a copy, and deleted", asyn
     .getByRole("button", { name: "Save schedule", exact: true })
     .click();
   await expect(page.getByText("Saved to your account.")).toBeVisible();
+  await openScheduleDetails();
   await expect(
     page.getByRole("button", { name: "Delete schedule", exact: true }),
   ).toBeVisible();
@@ -116,10 +129,11 @@ test("manual trip can be saved, reopened, imported as a copy, and deleted", asyn
   await page
     .getByRole("button", { name: "Save schedule", exact: true })
     .click();
+  await expect.poll(() => saved.size).toBe(2);
+  await openScheduleDetails();
   await expect(
     page.getByRole("button", { name: "Delete schedule", exact: true }),
   ).toBeVisible();
-  expect(saved.size).toBe(2);
   await page
     .getByRole("button", { name: "Delete schedule", exact: true })
     .click();

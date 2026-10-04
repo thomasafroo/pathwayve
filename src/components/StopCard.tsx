@@ -92,6 +92,14 @@ export function StopCard({
               disabled={disabled || stop.locked || !editable}
               onBlur={(event) => {
                 const minutes = Number(event.target.value);
+                if (
+                  !Number.isInteger(minutes) ||
+                  minutes < 5 ||
+                  minutes > 180
+                ) {
+                  event.target.value = String(stop.durationMinutes);
+                  return;
+                }
                 if (minutes !== stop.durationMinutes)
                   onModify({
                     type: "CHANGE_DURATION",
