@@ -25,6 +25,25 @@ function accessoryLabel(accessory: BringAdvice["accessories"][number]) {
   return labels[accessory];
 }
 
+function warmthLabel(warmth: BringAdvice["warmth"]) {
+  const labels: Record<BringAdvice["warmth"], string> = {
+    hot: "Dress light",
+    warm: "T-shirt",
+    mild: "Light layer",
+    hoodie: "Hoodie",
+    jacket: "Jacket",
+    winter_jacket: "Warm jacket",
+    freezing: "Warm jacket",
+  };
+  return labels[warmth];
+}
+
+function bringTitle(advice: BringAdvice) {
+  return [warmthLabel(advice.warmth), ...advice.accessories.map(accessoryLabel)]
+    .filter((item, index, items) => items.indexOf(item) === index)
+    .join(" + ");
+}
+
 export function WeatherCard({
   weather,
   advice,
@@ -48,7 +67,7 @@ export function WeatherCard({
           <p className="eyebrow">WEATHER CHECK</p>
           <h3>
             {advice
-              ? "Bring this"
+              ? bringTitle(advice)
               : `${Math.round(highestRain)}% peak rain risk`}
           </h3>
         </div>
