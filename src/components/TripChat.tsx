@@ -8,10 +8,15 @@ import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
 
 import type { PlanningConstraints } from "@/types/planning-constraints";
+import {
+  usablePlanningLocation,
+  type PlanningLocation,
+} from "@/lib/planning-location";
 
 export type ChatMessage = { role: "user" | "assistant"; text: string };
 
 export function TripChat({
+  liveLocation,
   compact,
   messages,
   onMessages,
@@ -22,6 +27,7 @@ export function TripChat({
   onSaved,
   onClose,
 }: {
+  liveLocation?: PlanningLocation;
   compact: boolean;
   messages: ChatMessage[];
   onMessages: (update: (previous: ChatMessage[]) => ChatMessage[]) => void;
@@ -144,6 +150,10 @@ export function TripChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: combined,
+          liveLocation: {
+            tracking: liveLocation?.tracking ?? false,
+            position: usablePlanningLocation(liveLocation),
+          },
           context: replaceTrip ? null : context,
           constraints,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,

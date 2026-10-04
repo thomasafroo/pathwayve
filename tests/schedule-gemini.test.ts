@@ -21,6 +21,31 @@ beforeEach(() => {
   generateContent.mockReset();
 });
 afterEach(() => vi.unstubAllEnvs());
+it.each(["fresh", "disabled", "stale"])(
+  "sends only usable location to Gemini (%s)",
+  async (state) => {
+    generateContent.mockResolvedValue({
+      text: JSON.stringify(scheduleIntent()),
+    });
+    const position = {
+      lat: 49.26,
+      lng: -123.25,
+      accuracy: 20,
+      timestamp: Date.now() - (state === "stale" ? 120000 : 0),
+    };
+    await generateSchedule({
+      ...request,
+      liveLocation: { tracking: state !== "disabled", position },
+    });
+    const contents = JSON.parse(generateContent.mock.calls[0][0].contents);
+    expect(contents.current_location.tracking_enabled).toBe(
+      state !== "disabled",
+    );
+    expect(contents.current_location.position).toEqual(
+      state === "fresh" ? position : null,
+    );
+  },
+);
 it("reports exhausted SDK timeouts separately from invalid JSON", async () => {
   generateContent.mockRejectedValue(new DOMException("Aborted", "AbortError"));
   await expect(generateSchedule(request)).rejects.toMatchObject({

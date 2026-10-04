@@ -14,6 +14,7 @@ import type { Location, TripState, RouteLeg } from "@/types/trip";
 import { endpoints } from "@/lib/fixtures";
 import { Icon } from "./Icon";
 import { useLiveLocation, type LivePosition } from "@/lib/use-live-location";
+import type { PlanningLocation } from "@/lib/planning-location";
 
 function NavigationOverlay({ route }: { route: RouteLeg | null }) {
   const map = useMap();
@@ -68,6 +69,7 @@ function PositionOverlay({
 }
 
 type MapProps = {
+  onLocationChange?: (location: PlanningLocation) => void;
   trip: TripState | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -321,6 +323,13 @@ export function Map(props: MapProps) {
   }
   const [fitCount, setFitCount] = useState(0);
   const location = useLiveLocation();
+  const onLocationChange = props.onLocationChange;
+  useEffect(() => {
+    onLocationChange?.({
+      tracking: location.tracking,
+      position: location.position,
+    });
+  }, [onLocationChange, location.tracking, location.position]);
   const [navigating, setNavigating] = useState(false);
   const [navigationRoute, setNavigationRoute] = useState<RouteLeg | null>(null);
   const [follow, setFollow] = useState(true);

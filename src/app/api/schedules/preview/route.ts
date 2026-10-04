@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { usablePlanningLocation } from "@/lib/planning-location";
 import { promptRequestSchema } from "@/types/schedule";
 import { generateSchedule } from "@/lib/schedule-gemini";
 import { materializeSchedule } from "@/lib/schedule-planning";
@@ -10,8 +11,14 @@ export async function POST(request: Request) {
   return handleApi(async () => {
     checkOrigin(request);
     const input = promptRequestSchema.parse(await readJson(request));
+    const currentPosition = usablePlanningLocation(input.liveLocation);
     const draft = await generateSchedule(input);
     if (draft.clarification) return { clarification: draft.clarification };
-    return materializeSchedule(draft, randomUUID(), input.constraints);
+    return materializeSchedule(
+      draft,
+      randomUUID(),
+      input.constraints,
+      currentPosition,
+    );
   });
 }

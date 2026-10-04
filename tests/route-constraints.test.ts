@@ -53,6 +53,30 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllEnvs());
+it("routes CURRENT_LOCATION from the supplied coordinates without searching for it", async () => {
+  const draft = scheduleIntent();
+  draft.schedules[0].origin_query = "CURRENT_LOCATION";
+  draft.schedule_items = [];
+  vi.mocked(searchPlaces).mockResolvedValue({
+    source: "live",
+    places: [destination],
+  });
+  const position = { lat: 49.26, lng: -123.25 };
+  const result = await materializeSchedule(draft, owner, undefined, position);
+  expect(result.workspace?.trip.request.origin.location).toEqual(position);
+  expect(
+    vi
+      .mocked(searchPlaces)
+      .mock.calls.some(([input]) => input.query === "CURRENT_LOCATION"),
+  ).toBe(false);
+});
+it("rejects current-location endpoints when no usable location was supplied", async () => {
+  const draft = scheduleIntent();
+  draft.schedules[0].origin_query = "CURRENT_LOCATION";
+  await expect(materializeSchedule(draft, owner)).rejects.toMatchObject({
+    code: "LOCATION_UNAVAILABLE",
+  });
+});
 it("restores omitted sidebar places and overrides model mode, endpoints, duration and priority", async () => {
   const input = constraints();
   const draft = scheduleIntent();

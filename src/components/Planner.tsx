@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import type { PlanningLocation } from "@/lib/planning-location";
 import { useRef, useState } from "react";
 import { BrandLogo } from "./BrandLogo";
 import type { Location, TripEvent, TripRequest } from "@/types/trip";
@@ -54,6 +55,10 @@ function PlannerSession({
   onClear: () => void;
 }) {
   const [documentSaved, setDocumentSaved] = useState(false);
+  const [liveLocation, setLiveLocation] = useState<PlanningLocation>({
+    tracking: false,
+    position: null,
+  });
   const tripForm = useRef<TripFormHandle>(null);
   const [formVersion, setFormVersion] = useState(0);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -393,6 +398,7 @@ function PlannerSession({
         </aside>
         <div className="map-canvas">
           <Map
+            onLocationChange={setLiveLocation}
             trip={mapTrip}
             onUseLocation={
               busy
@@ -426,6 +432,7 @@ function PlannerSession({
           )}
           {assistantOpen && (
             <TripChat
+              liveLocation={liveLocation}
               compact={showItinerary}
               messages={chatMessages}
               onMessages={setChatMessages}

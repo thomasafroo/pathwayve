@@ -36,6 +36,7 @@ export async function materializeSchedule(
   draft: GeneratedSchedule,
   owner: string,
   constraints?: PlanningConstraints | null,
+  currentPosition?: CandidatePlace["location"] | null,
 ): Promise<{ document: ScheduleDocument; workspace: WorkspaceTrip | null }> {
   draft = enforceScheduleConstraints(draft, constraints);
   const intent = draft.schedules[0];
@@ -64,6 +65,20 @@ export async function materializeSchedule(
     near?: CandidatePlace["location"],
     excludeRejected = false,
   ) => {
+    if (query === "CURRENT_LOCATION") {
+      if (!currentPosition)
+        throw new AppError(
+          "LOCATION_UNAVAILABLE",
+          "Enable Follow my location on the map and wait for a position, or enter a starting point.",
+          422,
+        );
+      return {
+        id: `coordinate:${currentPosition.lat},${currentPosition.lng}`,
+        name: "Current location",
+        location: { lat: currentPosition.lat, lng: currentPosition.lng },
+        category: "attraction" as const,
+      };
+    }
     const response = await searchPlaces({
       query,
       category: "attraction",

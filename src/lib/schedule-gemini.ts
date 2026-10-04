@@ -1,4 +1,5 @@
 import "server-only";
+import { usablePlanningLocation } from "./planning-location";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import {
@@ -193,6 +194,12 @@ export async function generateSchedule(input: PromptRequest) {
             validation_feedback: validationFeedback,
             confirmed_removed_stop_ids: confirmedRemovals ?? [],
             prompt: input.prompt,
+            current_location: {
+              tracking_enabled: input.liveLocation?.tracking ?? false,
+              position: usablePlanningLocation(input.liveLocation),
+              instructions:
+                "When the user refers to here, my location, or current location as an endpoint, use the exact endpoint query CURRENT_LOCATION if position is present. Use it as the default origin only when no origin is supplied by the user, sidebar, or existing trip. Explicit endpoints take priority. For nearby requests use the supplied coordinates as geographic context. Never infer home from these coordinates. If position is null, do not claim to know the location: ask the user to enable Follow my location on the map or supply a starting point when needed. Tracking enabled without a position means still waiting for a fresh fix. Accuracy is an uncertainty radius in meters; do not claim an exact street address.",
+            },
             existing_trip_context: input.context ?? null,
             required_sidebar_constraints: input.constraints ?? null,
             now: now.toISOString(),
