@@ -700,24 +700,16 @@ body {
   padding: 18px;
 }
 .chat-message {
+  align-self: flex-end;
   max-width: min(640px, 78%);
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.5;
+  background: var(--green);
+  color: white;
   border-radius: 8px;
   margin: 0;
   overflow-wrap: anywhere;
-}
-.chat-message.user {
-  align-self: flex-end;
-  background: var(--green);
-  color: white;
-}
-.chat-message.assistant {
-  align-self: flex-start;
-  background: white;
-  border: 1px solid #e1e7e1;
-  color: var(--ink);
 }
 .chat-composer {
   border-top: 1px solid #edf1ed;
