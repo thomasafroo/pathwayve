@@ -68,6 +68,7 @@ function PlannerSession({
   const [importedCalendar, setImportedCalendar] = useState<string | null>(null);
   const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [savedDocument, setSavedDocument] = useState<ScheduleDocument | null>(
     null,
@@ -264,8 +265,14 @@ function PlannerSession({
     : 0;
   const showItinerary = (!!trip || !!savedDocument) && itineraryOpen;
   function closeChat() {
+    if (chatBusy) return;
     setAssistantOpen(false);
     chatTrigger.current?.focus();
+  }
+  function setChatRequestBusy(next: boolean) {
+    if (next) planRevision.current++;
+    setChatBusy(next);
+    setBusy(next);
   }
   return (
     <div className={`maps-workspace ${showItinerary ? "has-itinerary" : ""}`}>
@@ -313,6 +320,7 @@ function PlannerSession({
               setHistory([]);
               setChatMessages([]);
               setAssistantOpen(false);
+              setChatBusy(false);
               setItineraryOpen(false);
               setMessage("");
               setError("");
@@ -441,10 +449,7 @@ function PlannerSession({
               context={trip?.request ?? null}
               getConstraints={() => tripForm.current?.getConstraints() ?? null}
               busy={busy}
-              onBusy={(value) => {
-                if (value) planRevision.current++;
-                setBusy(value);
-              }}
+              onBusy={setChatRequestBusy}
               onSaved={(document, workspace) => {
                 setDocumentSaved(false);
                 setFormVersion((version) => version + 1);
@@ -461,6 +466,7 @@ function PlannerSession({
                 setItineraryOpen(true);
               }}
               onClose={closeChat}
+              closeDisabled={chatBusy}
             />
           )}
           <button
@@ -470,6 +476,7 @@ function PlannerSession({
             title={assistantOpen ? "Close trip chat" : "Open trip chat"}
             aria-expanded={assistantOpen}
             aria-controls="trip-chat"
+            disabled={assistantOpen && chatBusy}
             onClick={() =>
               assistantOpen ? closeChat() : setAssistantOpen(true)
             }

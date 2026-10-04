@@ -27,6 +27,7 @@ export function TripChat({
   onBusy,
   onSaved,
   onClose,
+  closeDisabled = false,
   googleCalendar,
   onClearCalendar,
 }: {
@@ -43,6 +44,7 @@ export function TripChat({
     workspace: WorkspaceTrip | null,
   ) => void;
   onClose: () => void;
+  closeDisabled?: boolean;
   googleCalendar?: CalendarSelection | null;
   onClearCalendar?: () => void;
 }) {
@@ -403,7 +405,7 @@ export function TripChat({
       className={`trip-chat ${compact ? "compact" : ""} ${planning || planOutcome ? "has-companion" : ""}`}
       aria-label="Trip chat"
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        if (event.key === "Escape" && !closeDisabled) {
           event.stopPropagation();
           onClose();
         }
@@ -429,6 +431,7 @@ export function TripChat({
             className="icon-button"
             aria-label="Close chat panel"
             title="Close chat"
+            disabled={closeDisabled}
             onClick={onClose}
           >
             <Icon name="close" size={16} />

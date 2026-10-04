@@ -251,6 +251,44 @@ test("clarifications retain the original request and failures can be retried", a
   expect(requests[2].requestId).toBe(requests[1].requestId);
 });
 
+test("chat cannot be closed while Gemini schedule preview is pending", async ({
+  page,
+}) => {
+  let releasePreview!: () => void;
+  let previewStarted!: () => void;
+  const previewRequest = new Promise<void>((resolve) => {
+    previewStarted = resolve;
+  });
+  const previewRelease = new Promise<void>((resolve) => {
+    releasePreview = resolve;
+  });
+  await page.route("**/api/schedules/preview", async (route) => {
+    previewStarted();
+    await previewRelease;
+    await route.fulfill({ json: { document, workspace: null } });
+  });
+  await page.goto("/");
+  const chat = await openChat(page);
+  await chat.getByLabel("Chat message").fill("Plan tomorrow afternoon.");
+  await chat.getByRole("button", { name: "Send message" }).click();
+  await previewRequest;
+  await expect(
+    chat.getByRole("button", { name: "Close chat panel" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Close trip chat" }),
+  ).toBeDisabled();
+  await chat.getByLabel("Chat message").press("Escape");
+  await expect(chat).toBeVisible();
+  releasePreview();
+  await expect(chat).toContainText("Planned “Coffee and study time”");
+  await expect(
+    chat.getByRole("button", { name: "Close chat panel" }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Close trip chat" }).click();
+  await expect(chat).toHaveCount(0);
+});
+
 test("chat uses current sidebar stops and mode before a manual trip is created", async ({
   page,
 }) => {
