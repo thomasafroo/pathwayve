@@ -14,7 +14,7 @@ import { optimizeStopOrder } from "./stop-order";
 import { scheduleTrip } from "./routes";
 import { mapsMode } from "./server/env";
 import { AppError } from "./server/http";
-import { openMeteoWeather, summarizeWeather, weatherMode } from "./weather";
+import { googleWeather, summarizeWeather, weatherMode } from "./weather";
 
 export async function planTrip(request: TripRequest): Promise<TripState> {
   if (
@@ -91,12 +91,11 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
     warnings.push(
       `Compared ${optimized.evaluated} stop orders using ${mapsMode() === "live" ? "Google Routes travel times" : "demo estimates"}; chose the earliest arrival among available orders. Larger trips use a bounded search.`,
     );
-  let weather:
-    Awaited<ReturnType<typeof openMeteoWeather.forecast>> | undefined =
+  let weather: Awaited<ReturnType<typeof googleWeather.forecast>> | undefined =
     undefined;
   if (weatherMode() === "live") {
     try {
-      weather = await openMeteoWeather.forecast(
+      weather = await googleWeather.forecast(
         request.destination.location,
         request.startTime,
         request.endTime,

@@ -67,7 +67,7 @@ export function WeatherCard({
   if (!weather?.length)
     return (
       <p className="hint">
-        No weather forecast for this trip. Forecasts cover the next 16 days.
+        No weather forecast for this trip. Forecasts cover the next 10 days.
       </p>
     );
   const sample = weather.filter((_, index) =>

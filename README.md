@@ -35,8 +35,9 @@ Without a server key, “Load sample trip” demonstrates fictional stops and es
 travel. The browser map alone does not enable internet place search or real routes.
 Live failures are shown rather than replaced with samples.
 
-Plans include Open-Meteo hourly destination weather by default (no API key); set
-`WEATHER_DATA_MODE=off` to disable it. Weather is fetched as structured forecast data; no LLM generates or
+Plans include Google Weather API hourly destination weather (up to 10 days ahead)
+using `GOOGLE_MAPS_SERVER_API_KEY`; enable the Weather API for that key's Google
+Cloud project. Set `WEATHER_DATA_MODE=off` to disable it. Weather is fetched as structured forecast data; no LLM generates or
 interprets conditions. The backend also turns those facts into playful
 deterministic “what to bring” advice.
 

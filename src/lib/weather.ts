@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import type { Location, WeatherContext } from "@/types/trip";
+import { requireEnv } from "./server/env";
 import { AppError } from "./server/http";
 
 export interface WeatherProvider {
@@ -11,27 +12,34 @@ export interface WeatherProvider {
   ): Promise<WeatherContext[]>;
 }
 
-const openMeteoResponseSchema = z.object({
-  hourly: z.object({
-    time: z.array(z.string()),
-    temperature_2m: z.array(z.number().nullable()),
-    precipitation_probability: z.array(z.number().nullable()).optional(),
-    weather_code: z.array(z.number().nullable()).optional(),
-  }),
+const HOUR = 3600000;
+// Google's hourly forecast starts at the current hour and covers 240 hours.
+const MAX_HOURS = 240;
+
+const googleForecastSchema = z.object({
+  forecastHours: z
+    .array(
+      z.object({
+        interval: z.object({ startTime: z.string() }),
+        temperature: z.object({ degrees: z.number() }).optional(),
+        precipitation: z
+          .object({
+            probability: z.object({ percent: z.number() }).partial(),
+          })
+          .partial()
+          .optional(),
+        weatherCondition: z.object({ type: z.string() }).partial().optional(),
+      }),
+    )
+    .default([]),
+  nextPageToken: z.string().optional(),
 });
 
-function utcDate(time: string) {
-  return new Date(time).toISOString().slice(0, 10);
-}
-
-function toIsoHour(time: string) {
-  return new Date(`${time.endsWith("Z") ? time : `${time}Z`}`).toISOString();
-}
-
 export function weatherMode(): "off" | "live" {
-  // Open-Meteo needs no key, so forecasts are on unless explicitly turned off.
   const mode = process.env.WEATHER_DATA_MODE?.trim();
-  if (!mode) return "live";
+  // Google Weather uses the Maps server key, so forecasts follow that key by default.
+  if (!mode)
+    return process.env.GOOGLE_MAPS_SERVER_API_KEY?.trim() ? "live" : "off";
   if (mode === "off" || mode === "live") return mode;
   throw new AppError(
     "CONFIGURATION",
@@ -40,79 +48,80 @@ export function weatherMode(): "off" | "live" {
   );
 }
 
-function conditionFromCode(code: number): WeatherContext["condition"] {
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return "snow";
-  if (
-    [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(
-      code,
-    )
-  )
-    return "rain";
-  if ([1, 2, 3, 45, 48].includes(code)) return "cloudy";
+// Snow before rain: types such as SNOW_SHOWERS and RAIN_AND_SNOW contain both.
+export function conditionFromType(type = ""): WeatherContext["condition"] {
+  if (type.includes("SNOW")) return "snow";
+  if (/RAIN|SHOWER|THUNDER|HAIL/.test(type)) return "rain";
+  if (/CLOUDY|WINDY/.test(type)) return "cloudy";
   return "clear";
 }
 
-export class OpenMeteoWeatherProvider implements WeatherProvider {
+export class GoogleWeatherProvider implements WeatherProvider {
   async forecast(
     location: Location,
     startTime: string,
     endTime: string,
   ): Promise<WeatherContext[]> {
-    const url = new URL("https://api.open-meteo.com/v1/forecast");
-    url.searchParams.set("latitude", String(location.lat));
-    url.searchParams.set("longitude", String(location.lng));
-    url.searchParams.set(
-      "hourly",
-      "temperature_2m,precipitation_probability,weather_code",
-    );
-    url.searchParams.set("timezone", "UTC");
-    url.searchParams.set("start_date", utcDate(startTime));
-    url.searchParams.set("end_date", utcDate(endTime));
-
-    const response = await fetch(url, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok)
-      throw new AppError(
-        "WEATHER_PROVIDER_ERROR",
-        "Open-Meteo could not complete the forecast request.",
-        502,
+    const start = Date.parse(startTime),
+      end = Date.parse(endTime),
+      now = Date.now();
+    // Nothing to fetch for past trips or trips beyond the forecast horizon.
+    if (end < now || start > now + MAX_HOURS * HOUR) return [];
+    const hours = Math.min(MAX_HOURS, Math.ceil((end - now) / HOUR) + 1);
+    const key = requireEnv("GOOGLE_MAPS_SERVER_API_KEY");
+    const rows: z.infer<typeof googleForecastSchema>["forecastHours"] = [];
+    let pageToken: string | undefined;
+    do {
+      const url = new URL(
+        "https://weather.googleapis.com/v1/forecast/hours:lookup",
       );
+      // This API rejects the X-Goog-Api-Key header; it needs the key parameter.
+      url.searchParams.set("key", key);
+      url.searchParams.set("location.latitude", String(location.lat));
+      url.searchParams.set("location.longitude", String(location.lng));
+      url.searchParams.set("hours", String(hours));
+      url.searchParams.set("pageSize", "24");
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+      const response = await fetch(url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok)
+        throw new AppError(
+          "WEATHER_PROVIDER_ERROR",
+          "Google Weather could not complete the forecast request.",
+          502,
+        );
+      const page = googleForecastSchema.parse(await response.json());
+      rows.push(...page.forecastHours);
+      const last = page.forecastHours.at(-1);
+      // Stop paging once the forecast reaches the end of the trip.
+      pageToken =
+        last && Date.parse(last.interval.startTime) > end
+          ? undefined
+          : page.nextPageToken;
+    } while (pageToken);
 
-    const data = openMeteoResponseSchema.parse(await response.json());
-    const start = Date.parse(startTime);
-    const end = Date.parse(endTime);
-
-    return data.hourly.time
-      .map((time, index) => ({
-        time: toIsoHour(time),
-        temperature: data.hourly.temperature_2m[index],
-        precipitation:
-          data.hourly.precipitation_probability?.[index] ?? undefined,
-        code: data.hourly.weather_code?.[index] ?? undefined,
-      }))
-      .filter(
-        (row) =>
-          Date.parse(row.time) >= start &&
-          Date.parse(row.time) <= end &&
-          row.temperature !== null,
-      )
+    return rows
+      .filter((row) => {
+        const hour = Date.parse(row.interval.startTime);
+        // Keep each hour that overlaps the trip window.
+        return hour + HOUR > start && hour <= end && row.temperature;
+      })
       .map((row) => ({
         location,
-        forecastTime: row.time,
-        temperatureCelsius: row.temperature!,
+        forecastTime: new Date(row.interval.startTime).toISOString(),
+        temperatureCelsius: row.temperature!.degrees,
         precipitationProbability: Math.max(
           0,
-          Math.min(100, row.precipitation ?? 0),
+          Math.min(100, row.precipitation?.probability?.percent ?? 0),
         ),
-        condition:
-          typeof row.code === "number" ? conditionFromCode(row.code) : "clear",
+        condition: conditionFromType(row.weatherCondition?.type),
       }));
   }
 }
 
-export const openMeteoWeather = new OpenMeteoWeatherProvider();
+export const googleWeather = new GoogleWeatherProvider();
 
 export function summarizeWeather(weather: WeatherContext[]) {
   if (!weather.length) return [];
