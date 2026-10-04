@@ -16,9 +16,15 @@ import { ReplanControls } from "./ReplanControls";
 import { AddActivityDialog, AddStopDialog } from "./TripEditors";
 import { Icon } from "./Icon";
 import { formatTime } from "./StopCard";
+import { ChatPrompt } from "./ChatPrompt";
+import { SavedSchedule } from "./SavedSchedule";
+import type { ScheduleDocument } from "@/types/schedule";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [state, setState] = useState<WorkspaceTrip | null>(null);
+  const [savedDocument, setSavedDocument] = useState<ScheduleDocument | null>(
+    null,
+  );
   const [history, setHistory] = useState<WorkspaceTrip[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -29,6 +35,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [pickedLocation, setPickedLocation] = useState<Location | null>(null);
   const [picking, setPicking] = useState(false);
   const trip = state?.trip ?? null;
+  const mapTrip =
+    trip ?? savedDocument?.schedule_runs[0]?.result.map_trip ?? null;
   function commit(next: WorkspaceTrip) {
     if (state) setHistory((previous) => [...previous.slice(-19), state]);
     setState(next);
@@ -219,19 +227,25 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             </div>
           </aside>
           <div className="results">
+            {savedDocument && (
+              <SavedSchedule
+                document={savedDocument}
+                onClose={() => setSavedDocument(null)}
+              />
+            )}
             <div className="map-section-heading">
               <div>
                 <span className="live-dot" />
-                {trip ? "Your day, on the map" : "A world of little detours"}
+                {mapTrip ? "Your day, on the map" : "A world of little detours"}
               </div>
               <span>
-                {trip
-                  ? `${trip.stops.length} stops · ${trip.request.transportation}`
+                {mapTrip
+                  ? `${mapTrip.stops.length} stops · ${mapTrip.request.transportation}`
                   : "Start with a destination"}
               </span>
             </div>
             <Map
-              trip={trip}
+              trip={mapTrip}
               selectedId={selectedId}
               onSelect={selectStop}
               picking={picking}
@@ -402,6 +416,27 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
         </span>
         <span>Made with curiosity · StormHacks 2026</span>
       </footer>
+      <ChatPrompt
+        context={trip?.request ?? null}
+        busy={busy}
+        onBusy={setBusy}
+        onSaved={(document, workspace) => {
+          setSavedDocument(document);
+          setState(workspace);
+          setHistory([]);
+          setSelectedId(null);
+          setPicking(false);
+          setMessage(workspace?.trip.summary ?? "Schedule saved.");
+          setError("");
+          window.setTimeout(
+            () =>
+              window.document
+                .querySelector(".saved-schedule")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+            50,
+          );
+        }}
+      />
       {editor === "stop" && state && (
         <AddStopDialog
           state={state}

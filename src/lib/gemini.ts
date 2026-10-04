@@ -51,7 +51,7 @@ export async function selectStops(
     let text: string | undefined;
     try {
       const response = await ai.models.generateContent({
-        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
         contents: JSON.stringify({ request, candidates }),
         config: {
           systemInstruction:
