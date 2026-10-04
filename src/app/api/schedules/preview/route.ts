@@ -12,10 +12,10 @@ export async function POST(request: Request) {
   return handleApi(async () => {
     checkOrigin(request);
     const input = promptRequestSchema.parse(await readJson(request));
-    const owner = await scheduleOwner();
     const currentPosition = usablePlanningLocation(input.liveLocation);
+    // Only Google Calendar planning needs an account; chat works signed out.
     const calendar = input.googleCalendar
-      ? await loadGoogleEvents(owner, input.googleCalendar)
+      ? await loadGoogleEvents(await scheduleOwner(), input.googleCalendar)
       : null;
     const draft = await generateSchedule(input, calendar?.events);
     if (draft.clarification) return { clarification: draft.clarification };
