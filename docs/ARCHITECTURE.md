@@ -7,6 +7,7 @@ selections and geographic providers.
 ```text
 Location/stop search -> /api/search -> Places Text Search -> selectable results
 TripForm -> /api/plan -> normalize dates -> selected stops -> Routes legs
+                                                        -> optional weather
                                                         -> deadline validation
                                                         -> TripState -> map/timeline
 Workspace + JSON commands -> /api/trip-edit -> apply atomically -> Routes
@@ -16,7 +17,7 @@ Workspace + JSON commands -> /api/trip-edit -> apply atomically -> Routes
 ## Contracts and ownership
 
 `src/types/trip.ts` defines geography, normalized trip requests, candidates, stops,
-route legs, and existing trip events. `src/types/workspace.ts` adds activities,
+route legs, weather context, and existing trip events. `src/types/workspace.ts` adds activities,
 revisions, and modification commands. Coordinate shape is `{lat,lng}`. Times are
 ISO instants plus a named trip timezone. Distances use meters; durations use
 minutes. Changes to either shared schema should be communicated to the team.
@@ -26,14 +27,15 @@ and commands. `lib/planner.ts` assembles selected places and routes without call
 Gemini. `lib/gemini.ts` remains an unused adapter for a future planner. Server-only
 provider modules cannot enter the client bundle.
 
-| Method | Path             | Input                                         | Output                               |
-| ------ | ---------------- | --------------------------------------------- | ------------------------------------ |
-| GET    | `/api/health`    | none                                          | service status                       |
-| POST   | `/api/search`    | query, optional location bias/category/budget | places, source                       |
-| POST   | `/api/plan`      | TripRequestInput                              | normalized TripState                 |
-| POST   | `/api/trip-edit` | WorkspaceTrip + modification batch            | WorkspaceTrip                        |
-| POST   | `/api/replan`    | tripState + simulated event                   | TripState (demo only)                |
-| POST   | `/api/places`    | TripRequestInput                              | category candidates (legacy adapter) |
+| Method | Path                | Input                                         | Output                               |
+| ------ | ------------------- | --------------------------------------------- | ------------------------------------ |
+| GET    | `/api/health`       | none                                          | service status                       |
+| POST   | `/api/search`       | query, optional location bias/category/budget | places, source                       |
+| POST   | `/api/plan`         | TripRequestInput                              | normalized TripState                 |
+| POST   | `/api/trip-edit`    | WorkspaceTrip + modification batch            | WorkspaceTrip                        |
+| POST   | `/api/replan`       | tripState + simulated event                   | TripState (demo only)                |
+| POST   | `/api/places`       | TripRequestInput                              | category candidates (legacy adapter) |
+| POST   | `/api/bring-advice` | weather context                               | deterministic bring advice           |
 
 ## Current limits
 
@@ -50,8 +52,11 @@ there is no automatic comparison across modes or worldwide optimum guarantee.
 
 Trips and favourites are not persisted. Version checks are relative to the
 submitted workspace, not an authoritative database. Add authentication and a
-shared rate limiter before publicly deploying paid endpoints. Weather, real-time
-TransLink, conversational interpretation, and AI execution are not implemented.
+shared rate limiter before publicly deploying paid endpoints. Weather is advisory
+Open-Meteo data when explicitly enabled. Bring advice is deterministic clothing
+and accessory classification from weather facts, not AI-generated guidance.
+Weather-aware route optimization, real-time TransLink, conversational
+interpretation, and AI execution are not implemented.
 
 See [FRONTEND.md](FRONTEND.md) for setup, full JSON semantics, integration boundaries,
 and verification limits.

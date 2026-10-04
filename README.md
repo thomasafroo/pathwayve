@@ -35,6 +35,11 @@ Without a server key, “Load sample trip” demonstrates fictional stops and es
 travel. The browser map alone does not enable internet place search or real routes.
 Live failures are shown rather than replaced with samples.
 
+Set `WEATHER_DATA_MODE=live` to add Open-Meteo hourly destination weather to live
+plans. Weather is fetched as structured forecast data; no LLM generates or
+interprets conditions. The backend also turns those facts into playful
+deterministic “what to bring” advice.
+
 ## Included
 
 - Desktop map with selected markers and transport-specific route geometry.
@@ -43,11 +48,13 @@ Live failures are shown rather than replaced with samples.
 - Interests, budget, free-text preferences, and transit route priorities.
 - Now-to-end-of-day defaults and explicit date ranges in JSON.
 - Stop/activity editing, locks, atomic modifications, undo, and JSON export.
+- Weather-based clothing/accessory advice when live weather is enabled.
 - Runtime validation, unit/provider tests, and desktop browser tests.
 
 Gemini suggestions, multi-day overnight planning, persistent accounts/favourites,
-live weather, and active-trip navigation are future features. Ranking uses a
-transparent heuristic; it does not claim personalized AI recommendations.
+weather-aware route optimization, and active-trip navigation are future features.
+Ranking uses a transparent heuristic; it does not claim personalized AI
+recommendations.
 
 See [frontend and API setup](docs/FRONTEND.md), [architecture](docs/ARCHITECTURE.md),
 and [team workflow](CONTRIBUTING.md).

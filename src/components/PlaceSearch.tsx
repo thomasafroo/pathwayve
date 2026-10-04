@@ -130,15 +130,13 @@ export function PlaceSearch({
     setBusy(true);
     setError("");
     try {
-      const data = z
-        .object({ place: candidatePlaceSchema })
-        .parse(
-          await post("/api/place-details", {
-            placeId: prediction.placeId,
-            sessionToken,
-            category,
-          }),
-        );
+      const data = z.object({ place: candidatePlaceSchema }).parse(
+        await post("/api/place-details", {
+          placeId: prediction.placeId,
+          sessionToken,
+          category,
+        }),
+      );
       if (revision.current !== token) return;
       setSuggestions([]);
       setResults([]);

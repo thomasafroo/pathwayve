@@ -1046,6 +1046,70 @@ input[type="checkbox"] {
   flex-direction: column;
   gap: 16px;
 }
+.weather-card {
+  padding: 18px;
+}
+.weather-heading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: #6f8f9b;
+}
+.weather-heading h3 {
+  font-family: Georgia, serif;
+  font-size: 18px;
+  font-weight: 400;
+  margin-top: 5px;
+  color: var(--ink);
+}
+.weather-advice {
+  margin-top: 15px;
+  color: #52646a;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.weather-accessories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.weather-accessories span {
+  border: 1px solid #d8e3d5;
+  border-radius: 6px;
+  color: #607c63;
+  font-size: 8px;
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+.weather-hours {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 16px;
+}
+.weather-hours > div {
+  min-width: 0;
+  border: 1px solid #dde5d6;
+  border-radius: 7px;
+  padding: 10px 7px;
+  color: #6d8f9d;
+}
+.weather-hours span,
+.weather-hours small {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.weather-hours strong {
+  display: block;
+  margin: 7px 0 2px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
 .replan {
   background: #eef2e5;
   border-color: #e0e7d5;

@@ -16,6 +16,7 @@ import { ReplanControls } from "./ReplanControls";
 import { AddActivityDialog, AddStopDialog } from "./TripEditors";
 import { Icon } from "./Icon";
 import { formatTime } from "./StopCard";
+import { WeatherCard } from "./WeatherCard";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [panel, setPanel] = useState<"plan" | "itinerary">("plan");
@@ -324,6 +325,10 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                       ? "Pick on map"
                       : "Add a place"}
                   </button>
+                  <WeatherCard
+                    weather={trip.weather}
+                    advice={trip.bringAdvice}
+                  />
                   <ReplanControls trip={trip} busy={busy} onReplan={onReplan} />
                   <details className="data-note">
                     <summary>

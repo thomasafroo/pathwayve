@@ -138,49 +138,49 @@ export function TripForm({
           {(["origin", "destination"] as const).map((kind) => {
             const point = kind === "origin" ? origin : destination;
             return (
-            <div key={kind} className="endpoint-choice">
-            <span className="field-heading">
-                {kind === "origin" ? "Starting point" : "Destination"}
-            </span>
+              <div key={kind} className="endpoint-choice">
+                <span className="field-heading">
+                  {kind === "origin" ? "Starting point" : "Destination"}
+                </span>
 
-            {editing === kind ? (
-                <PlaceSearch
-                label={
-                    kind === "origin"
-                    ? "Search starting point"
-                    : "Search destination"
-                }
-                disabled={busy}
-                onSelect={(place) => {
-                    const endpoint = {
-                    name: place.name,
-                    location: place.location,
-                    placeId: place.id,
-                    };
-
-                    if (kind === "origin") {
-                    setOrigin(endpoint);
-                    setEditing(destination ? null : "destination");
-                    } else {
-                    setDestination(endpoint);
-                    setEditing(null);
+                {editing === kind ? (
+                  <PlaceSearch
+                    label={
+                      kind === "origin"
+                        ? "Search starting point"
+                        : "Search destination"
                     }
-                }}
-                />
-            ) : (
-                <button
-                type="button"
-                className="chosen-endpoint"
-                onClick={() => setEditing(kind)}
-                >
-                <Icon name="pin" size={14} />
+                    disabled={busy}
+                    onSelect={(place) => {
+                      const endpoint = {
+                        name: place.name,
+                        location: place.location,
+                        placeId: place.id,
+                      };
 
-                {point?.name ?? "Choose any location"}
+                      if (kind === "origin") {
+                        setOrigin(endpoint);
+                        setEditing(destination ? null : "destination");
+                      } else {
+                        setDestination(endpoint);
+                        setEditing(null);
+                      }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="chosen-endpoint"
+                    onClick={() => setEditing(kind)}
+                  >
+                    <Icon name="pin" size={14} />
 
-                <span>Change</span>
-                </button>
-            )}
-            </div>
+                    {point?.name ?? "Choose any location"}
+
+                    <span>Change</span>
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
