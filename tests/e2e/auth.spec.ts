@@ -64,9 +64,6 @@ test("guest save survives Google redirect, saves once, reopens and signs out", a
     page.getByRole("button", { name: "Sign up", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page
-    .getByRole("button", { name: "Create itinerary", exact: true })
-    .click();
   await expect(page.locator(".stop")).toHaveCount(4);
   expect(saves).toBe(0);
   await page
@@ -137,9 +134,6 @@ test("cancelled Google login restores the draft without saving", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
   await page
-    .getByRole("button", { name: "Create itinerary", exact: true })
-    .click();
-  await page
     .getByRole("button", { name: "Save schedule", exact: true })
     .click();
   await page.getByRole("button", { name: "Continue with Google" }).click();
@@ -167,7 +161,6 @@ test("signed-in header actions fit without being cut off", async ({
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page.getByRole("button", { name: "Create itinerary" }).click();
   await expect(page.locator(".stop")).toHaveCount(4);
   for (const width of [1000, 1440]) {
     await page.setViewportSize({ width, height: 900 });

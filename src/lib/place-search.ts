@@ -1,4 +1,9 @@
 import "server-only";
+import {
+  providerHoursFields,
+  hoursFieldMask,
+  readOpeningHours,
+} from "@/types/opening-hours";
 import { z } from "zod";
 import { candidatePlaceSchema, locationSchema, categories } from "@/types/trip";
 import { mapsMode, requireEnv } from "./server/env";
@@ -9,12 +14,14 @@ export const placeSearchSchema = z.object({
   query: z.string().trim().min(2).max(200),
   category: z.enum(categories).default("attraction"),
   near: locationSchema.optional(),
+  radiusMeters: z.number().min(100).max(50000).optional(),
   budget: z.enum(["any", "budget", "moderate", "premium"]).default("any"),
 });
 const googlePlacesSchema = z.object({
   places: z
     .array(
       z.object({
+        ...providerHoursFields,
         id: z.string(),
         displayName: z.object({ text: z.string() }),
         location: z
@@ -58,7 +65,10 @@ export async function searchPlaces(input: z.infer<typeof placeSearchSchema>) {
     await googlePost(
       "https://places.googleapis.com/v1/places:searchText",
       requireEnv("GOOGLE_MAPS_SERVER_API_KEY"),
-      "places.id,places.displayName,places.location,places.formattedAddress,places.rating,places.userRatingCount,places.priceLevel,places.googleMapsUri",
+      `places.id,places.displayName,places.location,places.formattedAddress,places.rating,places.userRatingCount,places.priceLevel,places.googleMapsUri,${hoursFieldMask
+        .split(",")
+        .map((field) => `places.${field}`)
+        .join(",")}`,
       {
         textQuery: input.query,
         pageSize: 10,
@@ -70,7 +80,7 @@ export async function searchPlaces(input: z.infer<typeof placeSearchSchema>) {
                     latitude: input.near.lat,
                     longitude: input.near.lng,
                   },
-                  radius: 10000,
+                  radius: input.radiusMeters ?? 10000,
                 },
               },
             }
@@ -106,6 +116,7 @@ export async function searchPlaces(input: z.infer<typeof placeSearchSchema>) {
           priceLevel: p.priceLevel,
           mapsUrl: p.googleMapsUri,
           attribution: "Google Maps",
+          openingHours: readOpeningHours(p),
         }),
       ),
   };

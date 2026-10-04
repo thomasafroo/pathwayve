@@ -9,10 +9,9 @@ export const maxDuration = 300;
 export async function POST(request: Request) {
   return handleApi(async () => {
     checkOrigin(request);
-    const draft = await generateSchedule(
-      promptRequestSchema.parse(await readJson(request)),
-    );
+    const input = promptRequestSchema.parse(await readJson(request));
+    const draft = await generateSchedule(input);
     if (draft.clarification) return { clarification: draft.clarification };
-    return materializeSchedule(draft, randomUUID());
+    return materializeSchedule(draft, randomUUID(), input.constraints);
   });
 }

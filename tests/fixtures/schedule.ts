@@ -24,6 +24,8 @@ export function scheduleIntent(): GeneratedSchedule {
     schedule_items: [
       {
         kind: "visit",
+        location_scope: "specific",
+        selected_stop_id: null,
         title: "Coffee",
         place_query: "Cafe",
         duration_minutes: 30,

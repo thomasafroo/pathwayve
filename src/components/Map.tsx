@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { NavigationPanel } from "./NavigationPanel";
+import { PlaceHours } from "./PlaceHours";
+import { useEffect, useRef, useState } from "react";
 import {
   APIProvider,
   Map as GoogleMap,
@@ -8,11 +10,26 @@ import {
   useApiLoadingStatus,
   APILoadingStatus,
 } from "@vis.gl/react-google-maps";
-import type { Location, TripState } from "@/types/trip";
+import type { Location, TripState, RouteLeg } from "@/types/trip";
 import { endpoints } from "@/lib/fixtures";
 import { Icon } from "./Icon";
 import { useLiveLocation, type LivePosition } from "@/lib/use-live-location";
 
+function NavigationOverlay({ route }: { route: RouteLeg | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || !route) return;
+    const line = new google.maps.Polyline({
+      map,
+      path: route.path,
+      strokeColor: "#1769e0",
+      strokeWeight: 7,
+      zIndex: 10,
+    });
+    return () => line.setMap(null);
+  }, [map, route]);
+  return null;
+}
 function PositionOverlay({
   position,
   follow,
@@ -57,6 +74,7 @@ type MapProps = {
   onPick: (location: Location) => void;
   picking: boolean;
   onCancelPick: () => void;
+  onUseLocation?: (location: Location) => void;
 };
 function RouteOverlay({
   trip,
@@ -263,13 +281,54 @@ function RouteSketch({
 export function Map(props: MapProps) {
   const { trip, selectedId, onSelect, picking, onPick, onCancelPick } = props;
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const panel = useRef<HTMLElement>(null);
+  const fullscreenButton = useRef<HTMLButtonElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      setFullscreen(document.fullscreenElement === panel.current);
+      if (!document.fullscreenElement) fullscreenButton.current?.focus();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && fullscreen && !document.fullscreenElement) {
+        setFullscreen(false);
+        fullscreenButton.current?.focus();
+      }
+    };
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [fullscreen]);
+  async function toggleFullscreen() {
+    if (document.fullscreenElement === panel.current) {
+      await document.exitFullscreen();
+    } else if (fullscreen) {
+      setFullscreen(false);
+      fullscreenButton.current?.focus();
+    } else {
+      try {
+        if (!panel.current?.requestFullscreen)
+          throw new Error("Fullscreen unavailable");
+        await panel.current.requestFullscreen();
+      } catch {
+        // Embedded browsers may block native fullscreen; expand within the window.
+        setFullscreen(true);
+      }
+    }
+  }
   const [fitCount, setFitCount] = useState(0);
   const location = useLiveLocation();
+  const [navigating, setNavigating] = useState(false);
+  const [navigationRoute, setNavigationRoute] = useState<RouteLeg | null>(null);
   const [follow, setFollow] = useState(true);
   const selected = trip?.stops.find((s) => s.id === selectedId);
   return (
     <section
-      className={`map-panel ${picking ? "is-picking" : ""}`}
+      ref={panel}
+      className={`map-panel ${picking ? "is-picking" : ""} ${fullscreen ? "map-fullscreen" : ""}`}
       aria-label="Trip map"
       id="trip-map"
     >
@@ -333,6 +392,7 @@ export function Map(props: MapProps) {
               selectedId={selectedId}
               fitCount={fitCount}
             />
+            <NavigationOverlay route={navigating ? navigationRoute : null} />
             {location.position && (
               <PositionOverlay position={location.position} follow={follow} />
             )}
@@ -342,9 +402,20 @@ export function Map(props: MapProps) {
       ) : (
         <RouteSketch trip={trip} selectedId={selectedId} onSelect={onSelect} />
       )}
+      <button
+        ref={fullscreenButton}
+        className="fit-map"
+        type="button"
+        aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        aria-pressed={fullscreen}
+        onClick={() => void toggleFullscreen()}
+      >
+        <Icon name={fullscreen ? "close" : "fit"} size={18} />
+      </button>
       {key && (
         <button
-          className="fit-map"
+          className="fit-map route-fit-control"
           aria-label="Fit route"
           title="Fit route"
           onClick={() => {
@@ -352,7 +423,7 @@ export function Map(props: MapProps) {
             setFitCount((n) => n + 1);
           }}
         >
-          <Icon name="fit" size={18} />
+          <Icon name="locate" size={18} />
         </button>
       )}
       <div className="location-controls">
@@ -377,10 +448,40 @@ export function Map(props: MapProps) {
               <Icon name="locate" size={19} />
               {follow ? "Following you" : "Recenter on me"}
             </button>
-            <button className="location-stop" onClick={location.stop}>
+            <button
+              className="location-stop"
+              onClick={() => {
+                location.stop();
+                setNavigating(false);
+                setNavigationRoute(null);
+              }}
+            >
               Stop tracking
             </button>
           </>
+        )}
+        {location.position && props.onUseLocation && (
+          <button
+            className="location-button"
+            onClick={() => props.onUseLocation?.(location.position!)}
+          >
+            Use my location as start
+          </button>
+        )}
+        {trip?.source === "live" && !navigating && (
+          <button
+            className="location-button"
+            onClick={() => {
+              setNavigating(true);
+              setFollow(true);
+              if (!location.tracking) location.start();
+            }}
+          >
+            Start navigation
+          </button>
+        )}
+        {trip?.source === "demo" && (
+          <p className="location-readout">Navigation requires a live route.</p>
         )}
         {location.tracking && (
           <p className="location-readout" aria-live="polite">
@@ -395,6 +496,19 @@ export function Map(props: MapProps) {
           </p>
         )}
       </div>
+      {navigating && trip?.source === "live" && (
+        <NavigationPanel
+          key={`${trip.id}-${trip.lastUpdated}`}
+          trip={trip}
+          position={location.position}
+          onRoute={setNavigationRoute}
+          onStop={() => {
+            setNavigating(false);
+            setNavigationRoute(null);
+            location.stop();
+          }}
+        />
+      )}
       {picking && (
         <div className="map-pick-banner">
           Click the map to place your new stop.
@@ -410,6 +524,7 @@ export function Map(props: MapProps) {
           </span>
           <div>
             <strong>{selected.name}</strong>
+            <PlaceHours place={selected} />
             <span>
               {selected.durationMinutes} min · {selected.category}
             </span>

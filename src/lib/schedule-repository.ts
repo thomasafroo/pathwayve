@@ -221,3 +221,15 @@ export async function readSchedule(
     schedule_runs: runs.rows.map((row) => row.run),
   };
 }
+
+export async function deleteSchedule(
+  database: SqlConnection,
+  owner: string,
+  id: string,
+) {
+  const result = await database.query(
+    "DELETE FROM pathwayve.schedules WHERE id = $1 AND user_id = $2 RETURNING id",
+    [id, owner],
+  );
+  return result.rows.length > 0;
+}

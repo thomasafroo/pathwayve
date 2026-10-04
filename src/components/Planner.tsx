@@ -7,9 +7,10 @@ import {
   applyModifications,
   createWorkspace,
   receiveReplan,
+  validateWorkspace,
 } from "@/lib/trip-workspace";
 import { tripClient } from "@/lib/trip-client";
-import { TripForm } from "./TripForm";
+import { TripForm, type TripFormHandle } from "./TripForm";
 import { Map } from "./Map";
 import { Itinerary } from "./Itinerary";
 import { ReplanControls } from "./ReplanControls";
@@ -27,6 +28,8 @@ import { CalendarDialog } from "./CalendarDialog";
 import { savedScheduleCalendar, workspaceCalendar } from "@/lib/calendar";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
+  const [documentSaved, setDocumentSaved] = useState(false);
+  const tripForm = useRef<TripFormHandle>(null);
   const [formVersion, setFormVersion] = useState(0);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [importedCalendar, setImportedCalendar] = useState<string | null>(null);
@@ -57,6 +60,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     if (state) setHistory((previous) => [...previous.slice(-19), state]);
     setState(next);
     setSavedDocument(null);
+    setDocumentSaved(false);
     if (!next.trip.stops.some((s) => s.id === selectedId)) setSelectedId(null);
   }
   async function modify(change: TripModification): Promise<boolean> {
@@ -101,10 +105,17 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     setBusy(true);
     setError("");
     try {
-      const next = createWorkspace(await tripClient.plan(request));
-      setState(next);
-      setSavedDocument(null);
-      setHistory([]);
+      const planned = await tripClient.plan(request);
+      const next = state
+        ? validateWorkspace({
+            trip: { ...planned, id: state.trip.id },
+            version: state.version + 1,
+            activities: state.activities.filter((activity) =>
+              planned.stops.some((stop) => stop.id === activity.stopId),
+            ),
+          })
+        : createWorkspace(planned);
+      commit(next);
       setSelectedId(null);
       setPicking(false);
       setMessage(next.trip.summary);
@@ -135,6 +146,47 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     } finally {
       setBusy(false);
     }
+  }
+  async function deleteCurrent() {
+    if (!savedDocument || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/schedules/${savedDocument.schedules[0].id}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) throw new Error("Unable to delete this schedule.");
+      setSavedDocument(null);
+      setDocumentSaved(false);
+      setMessage("Saved schedule deleted. Your working route is unchanged.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function importSchedule() {
+    const run = savedDocument?.schedule_runs[0];
+    const storedTrip = run?.result.map_trip;
+    if (!storedTrip || !savedDocument || busy) return;
+    const snapshot = {
+      ...storedTrip,
+      request: {
+        ...storedTrip.request,
+        interestTags:
+          storedTrip.request.interestTags ??
+          savedDocument.schedules[0].preferences.interests,
+      },
+    };
+    const workspace = createWorkspace(snapshot);
+    commit({ ...workspace, trip: { ...snapshot, id: crypto.randomUUID() } });
+    tripForm.current?.importTrip(snapshot);
+    setMessage(
+      "Places imported as a new working trip. Adjust dates and preferences on the left; save when ready.",
+    );
+    setSavedDocument(null);
+    setDocumentSaved(false);
   }
   function undo() {
     const previous = history.at(-1);
@@ -212,7 +264,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           <AccountControls
             snapshot={{ document: savedDocument, workspace: state }}
             busy={busy}
-            onOpen={({ document, workspace }) => {
+            onOpen={({ document, workspace }, persisted) => {
+              setDocumentSaved(persisted && !!document);
               setFormVersion((version) => version + 1);
               setSavedDocument(document);
               setState(workspace);
@@ -228,6 +281,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               setPendingPlace(null);
               setState(null);
               setSavedDocument(null);
+              setDocumentSaved(false);
               setHistory([]);
               setChatMessages([]);
               setAssistantOpen(false);
@@ -247,6 +301,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
         <aside className="directions-panel" aria-label="Trip planning panel">
           <div className="panel-content">
             <TripForm
+              ref={tripForm}
               key={formVersion}
               busy={busy}
               onPlan={onPlan}
@@ -256,24 +311,31 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             />
           </div>
           <div className="plan-submit">
-            <button
-              type="submit"
-              form="trip-planner-form"
-              className="primary"
-              disabled={busy}
-            >
-              <Icon name="route" size={18} />
+            <p aria-live="polite">
               {busy
-                ? "Updating route..."
-                : trip
-                  ? "Update route"
-                  : "Create itinerary"}
-            </button>
+                ? "Updating route…"
+                : "Routes update automatically as you edit."}
+            </p>
+            {error && (
+              <button
+                type="submit"
+                form="trip-planner-form"
+                className="secondary"
+                disabled={busy}
+              >
+                Retry route update
+              </button>
+            )}
           </div>
         </aside>
         <div className="map-canvas">
           <Map
             trip={mapTrip}
+            onUseLocation={
+              busy
+                ? undefined
+                : (location) => tripForm.current?.useLocation(location)
+            }
             selectedId={selectedId}
             onSelect={(id) => {
               selectStop(id);
@@ -303,23 +365,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                   label="Search map places"
                   disabled={busy}
                   near={trip?.request.destination.location}
-                  onSelect={async (place) => {
-                    if (trip) {
-                      const added = await modify({
-                        type: "ADD_STOP",
-                        index: trip.stops.length,
-                        stop: {
-                          ...place,
-                          durationMinutes: 30,
-                          locked: false,
-                          arrivalTime: trip.request.startTime,
-                          reason: "Selected by you.",
-                          priority: "required",
-                        },
-                      });
-                      if (!added) return;
-                      setItineraryOpen(true);
-                    } else setPendingPlace(place);
+                  onSelect={(place) => {
+                    setPendingPlace({ ...place });
                     setMapSearchOpen(false);
                   }}
                 />
@@ -344,9 +391,11 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               messages={chatMessages}
               onMessages={setChatMessages}
               context={trip?.request ?? null}
+              getConstraints={() => tripForm.current?.getConstraints() ?? null}
               busy={busy}
               onBusy={setBusy}
               onSaved={(document, workspace) => {
+                setDocumentSaved(false);
                 setFormVersion((version) => version + 1);
                 setSavedDocument(document);
                 setState(workspace);
@@ -422,6 +471,10 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             <div className="itinerary-scroll">
               <SavedSchedule
                 document={savedDocument}
+                persisted={documentSaved}
+                onImport={importSchedule}
+                onDelete={() => void deleteCurrent()}
+                busy={busy}
                 onClose={() => setSavedDocument(null)}
               />
             </div>
@@ -449,6 +502,10 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               {savedDocument && (
                 <SavedSchedule
                   document={savedDocument}
+                  persisted={documentSaved}
+                  onImport={importSchedule}
+                  onDelete={() => void deleteCurrent()}
+                  busy={busy}
                   showRoute={false}
                   onClose={() => setSavedDocument(null)}
                 />

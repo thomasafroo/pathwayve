@@ -23,7 +23,8 @@ export function AccountControls({
 }: {
   snapshot: Snapshot;
   busy: boolean;
-  onOpen: (snapshot: Snapshot) => void;
+  // persisted: the snapshot is stored in the account (not a restored draft).
+  onOpen: (snapshot: Snapshot, persisted: boolean) => void;
   onSignOut: () => void;
 }) {
   const { data: session, isPending } = authClient.useSession();
@@ -74,7 +75,7 @@ export function AccountControls({
         throw new Error(data.error?.message || "Unable to save. Try again.");
       sessionStorage.removeItem(pendingKey);
       pending.current = null;
-      latest.current.onOpen(data);
+      latest.current.onOpen(data, true);
       setNotice("Saved to your account.");
     } catch (err) {
       setError(
@@ -112,7 +113,7 @@ export function AccountControls({
           const parsed = JSON.parse(stored);
           const payload = saveRequestSchema.parse(parsed.payload);
           pending.current = payload;
-          latest.current.onOpen(payload);
+          latest.current.onOpen(payload, false);
           if (returned === "complete" && userId && parsed.autoSave)
             await save(payload);
           else if (returned)
@@ -258,7 +259,7 @@ export function AccountControls({
         throw new Error(data.error?.message || "Unable to open schedule.");
       pending.current = null;
       sessionStorage.removeItem(pendingKey);
-      onOpen(data);
+      onOpen(data, true);
       setNotice("");
       libraryDialog.current?.close();
     } catch (err) {

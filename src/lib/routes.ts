@@ -1,4 +1,6 @@
 import "server-only";
+import { visitWindow } from "./opening-hours";
+import { refreshPlaceHours } from "./place-hours";
 import { z } from "zod";
 import type { Location, RouteLeg, TripRequest, TripStop } from "@/types/trip";
 import { mapsMode, requireEnv } from "./server/env";
@@ -159,6 +161,7 @@ export async function computeLeg(
   };
 }
 export async function scheduleTrip(request: TripRequest, stops: TripStop[]) {
+  stops = await Promise.all(stops.map(refreshPlaceHours));
   let current = request.origin;
   let time = Date.parse(request.startTime);
   const legs: RouteLeg[] = [];
@@ -175,7 +178,25 @@ export async function scheduleTrip(request: TripRequest, stops: TripStop[]) {
     legs.push(leg);
     time += leg.durationMinutes * 60_000;
     if (stop) {
-      scheduled.push({ ...stop, arrivalTime: new Date(time).toISOString() });
+      const window = visitWindow(
+        stop,
+        time,
+        stop.durationMinutes,
+        Date.parse(request.endTime),
+      );
+      if (!window)
+        throw new AppError(
+          "OPENING_HOURS",
+          `${stop.name}: the full visit does not fit its opening hours before your deadline. Change the order, duration, or date.`,
+          422,
+        );
+      time = window.start;
+      scheduled.push({
+        ...stop,
+        arrivalTime: new Date(time).toISOString(),
+        hoursStatus: window.status,
+        waitMinutes: window.waitMinutes,
+      });
       time += stop.durationMinutes * 60_000;
     }
     current = next;

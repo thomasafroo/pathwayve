@@ -9,11 +9,20 @@ export function SavedSchedule({
   document,
   onClose,
   showRoute = true,
+  persisted = false,
+  onImport,
+  onDelete,
+  busy = false,
 }: {
   document: ScheduleDocument;
   onClose: () => void;
   // Off when the editable itinerary below already shows the same legs.
   showRoute?: boolean;
+  // True once this snapshot is stored in the signed-in user's account.
+  persisted?: boolean;
+  onImport?: () => void;
+  onDelete?: () => void;
+  busy?: boolean;
 }) {
   const schedule = document.schedules[0],
     run = document.schedule_runs[0];
@@ -43,7 +52,9 @@ export function SavedSchedule({
     >
       <div className="saved-schedule-heading">
         <div>
-          <p className="eyebrow">SCHEDULE · {run.status}</p>
+          <p className="eyebrow">
+            {persisted ? "SAVED SCHEDULE" : "UNSAVED DRAFT"} · {run.status}
+          </p>
           <h2>{schedule.name}</h2>
         </div>
         <button type="button" className="text-button" onClick={onClose}>
@@ -105,8 +116,10 @@ export function SavedSchedule({
         </p>
       ))}
       <p className="hint">
+        {persisted
+          ? "Saved in your account."
+          : "Not saved yet. Press Save schedule to keep this version in your private account."}{" "}
         Calculated {time(run.calculated_at)}. Reopening does not refresh routes.
-        Press Save schedule to keep this version in your private account.
       </p>
       {!run.result.map_trip && run.status !== "failed" && (
         <p className="hint">
@@ -114,6 +127,31 @@ export function SavedSchedule({
           display its route.
         </p>
       )}
+      <div className="schedule-actions">
+        {onImport && (
+          <button
+            className="secondary"
+            onClick={onImport}
+            disabled={busy || !mapTrip}
+          >
+            Import places to planner
+          </button>
+        )}
+        {onDelete && persisted && (
+          <button className="secondary" onClick={onDelete} disabled={busy}>
+            Delete schedule
+          </button>
+        )}
+      </div>
+      {onImport &&
+        document.schedule_items.some(
+          (item) => item.kind === "task" || item.timing_type !== "flexible",
+        ) && (
+          <p className="hint">
+            Import copies mapped places. Appointment rules and standalone tasks
+            stay in this snapshot; add them to your new plan through chat.
+          </p>
+        )}
       <button className="secondary" type="button" onClick={download}>
         Download saved schedule JSON
       </button>

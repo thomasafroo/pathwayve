@@ -5,6 +5,8 @@ import { workspaceSchema, type WorkspaceTrip } from "@/types/workspace";
 import type { ScheduleDocument } from "@/types/schedule";
 import { Icon } from "./Icon";
 
+import type { PlanningConstraints } from "@/types/planning-constraints";
+
 export type ChatMessage = { role: "user" | "assistant"; text: string };
 
 export function TripChat({
@@ -12,6 +14,7 @@ export function TripChat({
   messages,
   onMessages,
   context,
+  getConstraints,
   busy,
   onBusy,
   onSaved,
@@ -21,6 +24,7 @@ export function TripChat({
   messages: ChatMessage[];
   onMessages: (update: (previous: ChatMessage[]) => ChatMessage[]) => void;
   context: TripRequest | null;
+  getConstraints: () => PlanningConstraints | null;
   busy: boolean;
   onBusy: (busy: boolean) => void;
   onSaved: (
@@ -39,6 +43,26 @@ export function TripChat({
   const [conversation, setConversation] = useState<string[]>([]);
   const requestId = useRef<string | null>(null);
   const sending = useRef(false);
+  const constraintSnapshot = useRef("");
+  const composer = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const input = composer.current;
+    if (!input) return;
+    const resize = () => {
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight + 2, 160)}px`;
+    };
+    resize();
+    const observer = new ResizeObserver(() => {
+      if (input.clientWidth !== width) {
+        width = input.clientWidth;
+        resize();
+      }
+    });
+    let width = input.clientWidth;
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, [draft, compact]);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -77,6 +101,12 @@ export function TripChat({
     requestId.current ??= crypto.randomUUID();
     const combined = [...conversation, `User: ${text}`].join("\n");
     try {
+      const constraints = getConstraints();
+      const snapshot = JSON.stringify(constraints);
+      if (snapshot !== constraintSnapshot.current) {
+        requestId.current = crypto.randomUUID();
+        constraintSnapshot.current = snapshot;
+      }
       if (combined.length > 4000)
         throw new Error(
           "Please start a shorter request (up to 4,000 characters).",
@@ -87,6 +117,7 @@ export function TripChat({
         body: JSON.stringify({
           prompt: combined,
           context,
+          constraints,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           requestId: requestId.current,
         }),
@@ -119,15 +150,25 @@ export function TripChat({
         ? workspaceSchema.parse(data.workspace)
         : null;
       onSaved(document, workspace);
+      const resultingPlaceIds = new Set(
+        document.schedule_items.map((item) => item.place_id).filter(Boolean),
+      );
+      const removed = (constraints?.selectedStops ?? []).filter(
+        (stop) => !resultingPlaceIds.has(stop.id),
+      );
+      const changeSummary = removed.length
+        ? `Removed ${removed.map((stop) => stop.name).join(", ")} from this itinerary. `
+        : "";
       onMessages((previous) => [
         ...previous,
         { role: "user", text },
         {
           role: "assistant",
           text:
-            run.status === "feasible"
+            changeSummary +
+            (run.status === "feasible"
               ? `Planned “${schedule.name}”. Review your itinerary, then press Save schedule to keep it in your account.`
-              : `Planned “${schedule.name}”, including activities that still need planning. Review the conflicts before saving.`,
+              : `Planned “${schedule.name}”, including activities that still need planning. Review the conflicts before saving.`),
         },
       ]);
       setDraft("");
@@ -372,8 +413,24 @@ export function TripChat({
         )}
         <div ref={end} />
       </div>
+      <p className="hint chat-constraints-note">
+        Required and locked stops are protected. Ask to remove optional stops in
+        chat. General place requests search within your route radius.
+      </p>
       <form className="chat-composer" onSubmit={submit}>
-        <input
+        <textarea
+          ref={composer}
+          rows={1}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
           autoFocus
           aria-label="Chat message"
           placeholder="Describe your day"

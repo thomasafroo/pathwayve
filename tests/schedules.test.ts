@@ -15,6 +15,7 @@ import { validateIntent } from "@/types/schedule";
 import { materializeSchedule } from "@/lib/schedule-planning";
 import {
   saveSchedule,
+  deleteSchedule,
   readSchedule,
   findByRequest,
 } from "@/lib/schedule-repository";
@@ -297,5 +298,50 @@ describe("real PostgreSQL storage", () => {
     expect(
       await readSchedule(database, owner, second.document.schedules[0].id),
     ).toBeNull();
+  });
+});
+
+describe("manual schedule lifecycle", () => {
+  it("deletes only the current owner's schedule and cascades its items and runs", async () => {
+    const { document } = await materializeSchedule(scheduleIntent(), owner);
+    const id = document.schedules[0].id;
+    await saveSchedule(database, document, randomUUID());
+    expect(await deleteSchedule(database, randomUUID(), id)).toBe(false);
+    expect(await readSchedule(database, owner, id)).not.toBeNull();
+    expect(await deleteSchedule(database, owner, id)).toBe(true);
+    expect(await readSchedule(database, owner, id)).toBeNull();
+    expect(
+      (
+        await database.query(
+          "SELECT id FROM pathwayve.schedule_items WHERE schedule_id = $1",
+          [id],
+        )
+      ).rows,
+    ).toHaveLength(0);
+    expect(
+      (
+        await database.query(
+          "SELECT id FROM pathwayve.schedule_runs WHERE schedule_id = $1",
+          [id],
+        )
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("copies a draft with fresh IDs and retains its route snapshot", async () => {
+    const { ownedSnapshot } = await import("@/lib/schedule-snapshot");
+    const { document } = await materializeSchedule(scheduleIntent(), owner);
+    const newOwner = randomUUID();
+    const copy = ownedSnapshot(
+      { requestId: randomUUID(), document, workspace: null },
+      newOwner,
+    );
+    expect(copy.schedules[0].id).not.toBe(document.schedules[0].id);
+    expect(copy.schedules[0].user_id).toBe(newOwner);
+    await saveSchedule(database, copy, randomUUID());
+    const loaded = await readSchedule(database, newOwner, copy.schedules[0].id);
+    expect(loaded?.schedule_runs[0].result.map_trip?.stops).toEqual(
+      document.schedule_runs[0].result.map_trip?.stops,
+    );
+    expect(copy.schedule_items[0].id).not.toBe(document.schedule_items[0].id);
   });
 });

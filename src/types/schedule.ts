@@ -2,6 +2,8 @@ import { z } from "zod";
 import { tripRequestSchema, tripStateSchema, type TripState } from "./trip";
 import { workspaceSchema } from "./workspace";
 
+import { planningConstraintsSchema } from "./planning-constraints";
+
 const instant = z.iso.datetime({ offset: true });
 const zone = z.string().refine((value) => {
   try {
@@ -14,6 +16,7 @@ const zone = z.string().refine((value) => {
 export const preferencesSchema = z.object({
   budget: z.enum(["any", "budget", "moderate", "premium"]),
   interests: z.array(z.string().max(80)).max(20),
+  order_policy: z.enum(["preserve", "optimize"]).optional(),
   routing_priority: z.enum(["fastest", "less_walking", "fewer_transfers"]),
   notes: z.string().max(1000),
 });
@@ -38,6 +41,7 @@ export const itemIntentSchema = z.object({
 
 // Gemini produces intentions, not SQL text, ownership IDs, or invented route estimates.
 export const generatedScheduleSchema = z.object({
+  removed_stop_ids: z.array(z.string().min(1)).max(6).optional(),
   schema_version: z.literal(1),
   clarification: z.string().max(500).nullable(),
   schedules: z
@@ -54,7 +58,14 @@ export const generatedScheduleSchema = z.object({
       }),
     )
     .max(1),
-  schedule_items: z.array(itemIntentSchema).max(12),
+  schedule_items: z
+    .array(
+      itemIntentSchema.extend({
+        location_scope: z.enum(["specific", "along_route"]),
+        selected_stop_id: z.string().nullable(),
+      }),
+    )
+    .max(12),
 });
 export type GeneratedSchedule = z.infer<typeof generatedScheduleSchema>;
 export const promptRequestSchema = z.object({
@@ -62,6 +73,7 @@ export const promptRequestSchema = z.object({
   timeZone: zone,
   requestId: z.uuid(),
   context: tripRequestSchema.nullable().optional(),
+  constraints: planningConstraintsSchema.nullable().optional(),
 });
 export type PromptRequest = z.infer<typeof promptRequestSchema>;
 export const savedScheduleSchema = z.object({

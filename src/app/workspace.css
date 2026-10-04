@@ -455,7 +455,7 @@ body {
   border-radius: 8px;
   padding: 9px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 52px 24px;
+  grid-template-columns: 18px 24px minmax(0, 1fr) 52px 24px;
   align-items: center;
   gap: 6px;
 }
@@ -720,6 +720,7 @@ body {
   overflow-wrap: anywhere;
 }
 .chat-composer {
+  flex-shrink: 0;
   border-top: 1px solid #edf1ed;
   display: flex;
   align-items: center;
@@ -727,7 +728,12 @@ body {
   padding: 12px;
   background: white;
 }
-.maps-workspace .chat-composer input {
+.maps-workspace .chat-composer textarea {
+  resize: none;
+  line-height: 20px;
+  max-height: 160px;
+  overflow-y: auto;
+  box-sizing: border-box;
   flex: 1;
   width: 0;
   margin: 0;
@@ -738,7 +744,7 @@ body {
   font-size: 14px;
   outline-offset: 0;
 }
-.maps-workspace .chat-composer input:focus {
+.maps-workspace .chat-composer textarea:focus {
   border-color: #7ba98d;
   box-shadow: 0 0 0 3px #236b5314;
 }
@@ -1369,6 +1375,133 @@ body {
 .maps-workspace .saved-route .travel-leg {
   padding: 4px 0 10px 12px;
   border-bottom: 1px solid #edf1ed;
+}
+
+.chat-constraints-note {
+  padding: 6px 16px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.stop-order-controls {
+  display: grid;
+  gap: 2px;
+}
+
+.stop-drag-handle {
+  cursor: grab;
+  border: 0;
+  background: transparent;
+  color: #527169;
+  padding: 0;
+  font-size: 22px;
+}
+.stop-drag-handle:active {
+  cursor: grabbing;
+}
+.maps-workspace .chosen-stops > .stop-drop-target {
+  outline: 2px solid #216956;
+  background: #e0eee7;
+}
+.plan-submit p {
+  font-size: 13px;
+  color: #527169;
+  margin: 0;
+}
+
+.maps-workspace .map-panel.map-fullscreen,
+.maps-workspace .map-panel:fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 1000;
+}
+.maps-workspace .route-fit-control {
+  top: auto;
+  bottom: 100px;
+}
+.chat-message {
+  white-space: pre-wrap;
+}
+
+.place-hours {
+  font-size: 12px;
+  color: #527169;
+  margin: 6px 0;
+}
+.place-hours p {
+  margin: 4px 0;
+}
+.navigation-panel {
+  position: absolute;
+  left: 20px;
+  top: 85px;
+  width: min(370px, calc(100% - 40px));
+  max-height: 55vh;
+  overflow: auto;
+  background: white;
+  padding: 16px;
+  border: 1px solid #dde5de;
+  border-radius: 12px;
+  z-index: 6;
+  box-shadow: 0 3px 15px #203e3020;
+  font-size: 13px;
+}
+.navigation-panel header,
+.navigation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+.navigation-panel button,
+.navigation-panel a {
+  padding: 6px 8px;
+  border: 1px solid #dde5de;
+  border-radius: 6px;
+  background: #f3f8f5;
+}
+.navigation-panel li {
+  margin: 8px 0;
+}
+
+.maps-workspace .chosen-stops .required-stop-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 11px;
+  color: #527169;
+}
+.maps-workspace .chosen-stops .required-stop-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  accent-color: #216956;
+}
+.maps-workspace .chosen-stops > .stop-dragging {
+  opacity: 0.4;
+  outline: 2px dashed #216956;
+  background: #e0eee7;
+}
+.maps-workspace .chosen-stops > div {
+  transition:
+    opacity 150ms ease,
+    background-color 150ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .maps-workspace .chosen-stops > div {
+    transition: none;
+  }
+}
+
+.schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
 }
 /* Account controls and native dialogs share the planner's existing palette. */
 .account-controls {

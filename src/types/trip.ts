@@ -1,3 +1,4 @@
+import { openingHoursSchema } from "./opening-hours";
 import { z } from "zod";
 import { endOfDay } from "@/lib/time-window";
 
@@ -29,6 +30,7 @@ export const candidatePlaceSchema = z.object({
   priceLevel: z.string().optional(),
   mapsUrl: z.url().optional(),
   attribution: z.string().optional(),
+  openingHours: openingHoursSchema.optional(),
 });
 export const tripRequestSchema = z
   .object({
@@ -58,6 +60,7 @@ export const tripRequestSchema = z
     preferences: z.string().trim().max(1000).default(""),
     favoritePlaceIds: z.array(z.string().min(1)).max(100).optional(),
     interestTags: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
+    orderPolicy: z.enum(["preserve", "optimize"]).optional(),
     routingPriority: z
       .enum(["fastest", "less_walking", "fewer_transfers"])
       .optional(),
@@ -99,6 +102,8 @@ export const tripRequestSchema = z
 
 export const tripStopSchema = candidatePlaceSchema.extend({
   arrivalTime: z.iso.datetime({ offset: true }),
+  hoursStatus: z.enum(["current", "regular", "unknown"]).optional(),
+  waitMinutes: z.number().nonnegative().optional(),
   durationMinutes: z.number().int().min(5).max(180),
   reason: z.string().min(1).max(1000),
   locked: z.boolean(),
