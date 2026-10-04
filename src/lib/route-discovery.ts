@@ -5,6 +5,20 @@ import type { SavedItem } from "@/types/schedule";
 import { computeScheduleLeg } from "./schedule-routing";
 import { searchPlaces } from "./place-search";
 import { AppError } from "./server/http";
+import { tryGroundPlaces, type Requirement } from "./maps-grounding";
+
+// Each point of Google Maps fit is worth five minutes of extra travel.
+const minutesPerFitPoint = 5;
+export function requestedRequirements(item: SavedItem): Requirement[] {
+  return (["seating", "quiet", "wifi"] as const).filter(
+    (requirement) => item.requirements[requirement],
+  );
+}
+export function meetsRequirements(item: SavedItem, place: CandidatePlace) {
+  return requestedRequirements(item).every((requirement) =>
+    place.insight?.verified.includes(requirement),
+  );
+}
 
 export type RouteAnchor = { place: CandidatePlace; item: SavedItem };
 // Distance to the provider's route segments, never to the origin-destination chord.
@@ -156,33 +170,72 @@ export async function discoverRoutePlace({
       return nearest ? [{ place, ...nearest }] : [];
     })
     .sort((a, b) => a.distance - b.distance)
-    .slice(0, 3);
+    .slice(0, 5);
+  // Gemini checks the candidates against the request with Google Maps data while
+  // the journeys are routed, so grounding adds no time beyond the slower of the two.
+  const grounding = tryGroundPlaces({
+    want: item.title === query ? query : `${item.title} (${query})`,
+    requirements: requestedRequirements(item),
+    preferences: request.preferences,
+    interests: request.interestTags,
+    budget: request.budget,
+    near: candidates[0]?.place.location ?? origin.location,
+    candidates: candidates.map((candidate) => candidate.place),
+  });
   // Validate complete journeys with the chosen mode, including transit departure times,
   // stop duration and fixed appointments. Geographic proximity alone isn't efficiency.
-  const evaluated = await Promise.all(
-    candidates.map(async (candidate) => {
-      const withStop = [...anchors];
-      withStop.splice(candidate.index, 0, { place: candidate.place, item });
-      try {
-        const routed = await traceRoute(origin, destination, withStop, request);
-        return routed
-          ? {
-              ...candidate,
-              arrival: routed.arrival,
-              travelMinutes: routed.travelMinutes,
-            }
-          : null;
-      } catch (error) {
-        if (error instanceof AppError && error.code === "NO_ROUTE") return null;
-        throw error;
-      }
-    }),
-  );
+  const [insights, evaluated] = await Promise.all([
+    grounding,
+    Promise.all(
+      candidates.map(async (candidate) => {
+        const withStop = [...anchors];
+        withStop.splice(candidate.index, 0, { place: candidate.place, item });
+        try {
+          const routed = await traceRoute(
+            origin,
+            destination,
+            withStop,
+            request,
+          );
+          return routed
+            ? {
+                ...candidate,
+                arrival: routed.arrival,
+                travelMinutes: routed.travelMinutes,
+              }
+            : null;
+        } catch (error) {
+          if (error instanceof AppError && error.code === "NO_ROUTE")
+            return null;
+          throw error;
+        }
+      }),
+    ),
+  ]);
+  const feasible = evaluated
+    .filter((value) => value !== null)
+    .map((candidate) => {
+      const insight = insights?.get(candidate.place.id);
+      return insight
+        ? { ...candidate, place: { ...candidate.place, insight } }
+        : candidate;
+    });
+  if (!feasible.length) return null;
+  const earliest = Math.min(...feasible.map((candidate) => candidate.arrival));
+  // Without grounding every candidate scores the same and the fastest wins.
+  // Places Google Maps returned no data for rank below reasonable matches.
+  const fit = (candidate: (typeof feasible)[number]) =>
+    insights ? (candidate.place.insight?.fit ?? 3) : 0;
+  const score = (candidate: (typeof feasible)[number]) =>
+    fit(candidate) * minutesPerFitPoint -
+    (candidate.arrival - earliest) / 60000;
   return (
-    evaluated
-      .filter((value) => value !== null)
-      .sort(
-        (a, b) => a.arrival - b.arrival || a.travelMinutes - b.travelMinutes,
-      )[0] ?? null
+    feasible.sort(
+      (a, b) =>
+        Number(meetsRequirements(item, b.place)) -
+          Number(meetsRequirements(item, a.place)) ||
+        score(b) - score(a) ||
+        a.travelMinutes - b.travelMinutes,
+    )[0] ?? null
   );
 }

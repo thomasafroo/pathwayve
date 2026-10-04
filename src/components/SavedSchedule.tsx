@@ -2,6 +2,7 @@
 import { Fragment } from "react";
 import type { ScheduleDocument } from "@/types/schedule";
 import { TravelLeg } from "./TravelLeg";
+import { PlaceInsight } from "./PlaceInsight";
 import { downloadCalendar, savedScheduleCalendar } from "@/lib/calendar";
 import { Icon } from "./Icon";
 
@@ -73,6 +74,10 @@ export function SavedSchedule({
           const unscheduled = run.result.unscheduled_items.find(
             (entry) => entry.item_id === item.id,
           );
+          const insight = placement
+            ? mapTrip?.stops.find((stop) => stop.id === placement.place_id)
+                ?.insight
+            : undefined;
           return (
             <li key={item.id}>
               <strong>{item.title}</strong>
@@ -88,6 +93,7 @@ export function SavedSchedule({
               {item.place_query && (
                 <small>Place search: {item.place_query}</small>
               )}
+              {insight && <PlaceInsight insight={insight} />}
             </li>
           );
         })}

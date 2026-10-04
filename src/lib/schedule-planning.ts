@@ -22,7 +22,13 @@ import { AppError } from "./server/http";
 import type { PlanningConstraints } from "@/types/planning-constraints";
 import { enforceScheduleConstraints } from "./schedule-constraints";
 import { optimizeStopOrder } from "./stop-order";
-import { discoverRoutePlace, traceRoute } from "./route-discovery";
+import {
+  discoverRoutePlace,
+  meetsRequirements,
+  requestedRequirements,
+  traceRoute,
+} from "./route-discovery";
+import { tryGroundPlaces } from "./maps-grounding";
 
 export async function materializeSchedule(
   draft: GeneratedSchedule,
@@ -162,6 +168,29 @@ export async function materializeSchedule(
         : intent.preferences.routing_priority,
     budget: intent.preferences.budget,
   };
+  // Explain named and sidebar places with Google Maps data. This runs alongside
+  // order optimization; places that already carry an insight keep it.
+  const named = items.flatMap((item) => {
+    const place = places.get(item.id);
+    return place && !place.insight ? [{ item, place }] : [];
+  });
+  const namedGrounding = named.length
+    ? tryGroundPlaces({
+        want: intent.name,
+        requirements: [],
+        preferences: request.preferences,
+        interests: request.interestTags,
+        budget: request.budget,
+        near: named[0].place.location,
+        candidates: named.map(({ place }) => place),
+        perPlace: new Map(
+          named.map(({ item, place }) => [
+            place.id,
+            { want: item.title, requirements: requestedRequirements(item) },
+          ]),
+        ),
+      })
+    : Promise.resolve(null);
   const result: RunResult = {
     placements: [],
     travel_legs: [],
@@ -206,6 +235,11 @@ export async function materializeSchedule(
         "Stop-order optimization is available for up to six resolved visits. Task schedules retain their sequence.",
       );
   }
+  const namedInsights = await namedGrounding;
+  for (const { item, place } of named) {
+    const insight = namedInsights?.get(place.id);
+    if (insight) places.set(item.id, { ...place, insight });
+  }
   const discoveryProblems = new Map<string, string>();
   if (genericIds.size) {
     const pending = ordered.filter((item) => genericIds.has(item.id));
@@ -216,7 +250,8 @@ export async function materializeSchedule(
           const place = places.get(existing.id);
           const unverifiedTask =
             existing.kind === "task" &&
-            Object.values(existing.requirements).some(Boolean);
+            !!place &&
+            !meetsRequirements(existing, place);
           return place && !unverifiedTask ? [{ place, item: existing }] : [];
         });
         const addition = await discoverRoutePlace({
@@ -311,10 +346,8 @@ export async function materializeSchedule(
         );
         continue;
       }
-      if (
-        item.kind === "task" &&
-        Object.values(item.requirements).some(Boolean)
-      ) {
+      // Google Maps evidence can confirm seating, quiet or wifi for a task.
+      if (item.kind === "task" && !meetsRequirements(item, place)) {
         unavailable(
           item,
           "REQUIREMENTS_UNVERIFIED",
@@ -470,6 +503,11 @@ export async function materializeSchedule(
     : missingRequired || late
       ? "infeasible"
       : "feasible";
+  const grounded = stops.filter((stop) => stop.insight).length;
+  if (grounded)
+    result.warnings.push(
+      `Gemini checked ${grounded} ${grounded === 1 ? "stop" : "stops"} against your request using Google Maps reviews and place details. Reviews can be out of date.`,
+    );
   result.warnings.push(
     "Place matches were selected from search results. Review place matches before travelling. Availability is not verified; opening-hours checks are shown per stop.",
   );

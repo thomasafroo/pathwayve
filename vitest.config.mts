@@ -13,6 +13,6 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     // Unit tests stay offline; weather tests opt in with vi.stubEnv.
-    env: { WEATHER_DATA_MODE: "off" },
+    env: { WEATHER_DATA_MODE: "off", MAPS_GROUNDING: "off" },
   },
 });
