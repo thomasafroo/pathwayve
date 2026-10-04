@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://www.pathwayve.tech/">
-    <img src="public/brand/pathwayve-logo.svg" alt="PathWayve" width="460" />
+    <img src="public/brand/pathwayve-github.jpg" alt="PathWayve" width="560" />
   </a>
 </p>
 

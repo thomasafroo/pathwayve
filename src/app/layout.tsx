@@ -11,9 +11,13 @@ const manrope = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://pathwayve.tech"),
   applicationName: "pathwayve",
   title: "pathwayve | Plan your trip",
   description: "Plan routes, choose stops, and make time for your day.",
+  alternates: {
+    canonical: "/",
+  },
 };
 export default function RootLayout({
   children,
