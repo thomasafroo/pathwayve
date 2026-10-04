@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Location, TripEvent, TripRequest } from "@/types/trip";
 import type { TripModification, WorkspaceTrip } from "@/types/workspace";
 import {
@@ -17,12 +17,17 @@ import { AddActivityDialog, AddStopDialog } from "./TripEditors";
 import { Icon } from "./Icon";
 import { formatTime } from "./StopCard";
 import { WeatherCard } from "./WeatherCard";
+import { TripChat } from "./TripChat";
+import { PlaceSearch } from "./PlaceSearch";
+import type { CandidatePlace } from "@/types/trip";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
-  const [panel, setPanel] = useState<"plan" | "itinerary">("plan");
+  const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [brief, setBrief] = useState("");
-  const [savedBrief, setSavedBrief] = useState("");
+  const [notes, setNotes] = useState<string[]>([]);
+  const [mapSearchOpen, setMapSearchOpen] = useState(false);
+  const [pendingPlace, setPendingPlace] = useState<CandidatePlace | null>(null);
+  const chatTrigger = useRef<HTMLButtonElement>(null);
   const [state, setState] = useState<WorkspaceTrip | null>(null);
   const [history, setHistory] = useState<WorkspaceTrip[]>([]);
   const [busy, setBusy] = useState(false);
@@ -87,7 +92,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
       setSelectedId(null);
       setPicking(false);
       setMessage(next.trip.summary);
-      setPanel("itinerary");
+      setItineraryOpen(true);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "We couldn't plan your day.",
@@ -153,240 +158,62 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
         ),
       )
     : 0;
+  const showItinerary = !!trip && itineraryOpen;
+  function closeChat() {
+    setAssistantOpen(false);
+    chatTrigger.current?.focus();
+  }
   return (
-    <div className="maps-workspace">
-      <nav className="workspace-rail" aria-label="Main navigation">
-        <Link className="rail-brand" href="/" aria-label="PathWayve home">
-          <Icon name="route" size={27} />
+    <div className={`maps-workspace ${showItinerary ? "has-itinerary" : ""}`}>
+      <header className="workspace-header">
+        <Link href="/" className="workspace-brand" aria-label="PathWayve home">
+          <span>
+            <Icon name="route" size={18} />
+          </span>
+          PathWayve
         </Link>
-        <button
-          aria-label="Open trip planner"
-          aria-pressed={panel === "plan"}
-          onClick={() => setPanel("plan")}
-        >
-          <Icon name="route" />
-          <span>Explore</span>
-        </button>
-        <button
-          aria-label="Open itinerary"
-          aria-pressed={panel === "itinerary"}
-          onClick={() => setPanel("itinerary")}
-        >
-          <Icon name="layers" />
-          <span>Your trip</span>
-        </button>
-        <button
-          aria-label="Open AI companion"
-          aria-pressed={assistantOpen}
-          onClick={() => setAssistantOpen(!assistantOpen)}
-        >
-          <Icon name="sparkle" />
-          <span>Assistant</span>
-        </button>
-        <div className="rail-bottom">
-          <span className="rail-avatar">PW</span>
-          <span>Workspace</span>
+        <div className="workspace-heading-actions">
+          <span className="trip-name">
+            {trip?.request.destination.name ?? "New trip"}
+          </span>
+          <span className="workspace-mode">
+            {mode === "demo" ? "Demo" : "Live"}
+          </span>
+          {trip && !itineraryOpen && (
+            <button
+              className="secondary"
+              onClick={() => setItineraryOpen(true)}
+            >
+              <Icon name="layers" size={16} /> Open itinerary
+            </button>
+          )}
         </div>
-      </nav>
+      </header>
       <main className="map-workspace-main">
         <aside className="directions-panel" aria-label="Trip planning panel">
-          <header className="panel-brand">
-            <Link href="/" className="wordmark">
-              pathwayve<span className="brand-dot">.</span>
-            </Link>
-            <span className="workspace-label">
-              {mode === "demo" ? "Demo" : "Live maps"}
-            </span>
-          </header>
-          <div className="panel-tabs" role="tablist" aria-label="Trip views">
-            <button
-              id="plan-tab"
-              role="tab"
-              aria-selected={panel === "plan"}
-              aria-controls="plan-panel"
-              onClick={() => setPanel("plan")}
-            >
-              Plan a trip
-            </button>
-            <button
-              id="itinerary-tab"
-              role="tab"
-              aria-selected={panel === "itinerary"}
-              aria-controls="itinerary-panel"
-              onClick={() => setPanel("itinerary")}
-            >
-              Your itinerary {trip && <span>{trip.stops.length}</span>}
-            </button>
-          </div>
-          {error && (
-            <div role="alert" className="error">
-              <span>{error}</span>
-              <button
-                className="icon-button"
-                onClick={() => setError("")}
-                aria-label="Dismiss error"
-              >
-                <Icon name="close" size={17} />
-              </button>
-            </div>
-          )}
-          <div
-            id="plan-panel"
-            role="tabpanel"
-            aria-labelledby="plan-tab"
-            hidden={panel !== "plan"}
-            className="panel-content"
-          >
+          <div className="panel-content">
             <TripForm
               busy={busy}
               onPlan={onPlan}
               mode={mode}
               currentTrip={trip}
+              pendingPlace={pendingPlace}
             />
           </div>
-          <div
-            id="itinerary-panel"
-            role="tabpanel"
-            aria-labelledby="itinerary-tab"
-            hidden={panel !== "itinerary"}
-            className="panel-content"
-          >
-            {trip && state ? (
-              <>
-                <div className="trip-toolbar">
-                  <div className="trip-stat">
-                    <Icon name="clock" size={18} />
-                    <span>
-                      <strong>{travel} min</strong>travel time
-                    </span>
-                  </div>
-                  <div className="trip-stat">
-                    <span>
-                      <strong>{formatTime(trip.arrivalTime)}</strong>arrival
-                    </span>
-                  </div>
-                  <div className="toolbar-actions">
-                    <button
-                      className="icon-button"
-                      title="Undo last change"
-                      aria-label="Undo last change"
-                      disabled={!history.length || busy}
-                      onClick={undo}
-                    >
-                      <Icon name="undo" size={18} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      title="Download trip JSON"
-                      aria-label="Download trip JSON"
-                      onClick={download}
-                      disabled={busy}
-                    >
-                      <Icon name="download" size={18} />
-                    </button>
-                  </div>
-                </div>
-                <div className="change-message">
-                  <Icon name="check" size={16} />
-                  <p role="status" aria-live="polite">
-                    {message}
-                  </p>
-                </div>
-                <Itinerary
-                  state={state}
-                  selectedId={selectedId}
-                  onSelect={selectStop}
-                  onModify={modify}
-                  onActivity={(id) => {
-                    setActivityStop(id);
-                    setEditor("activity");
-                  }}
-                  onAdd={() => {
-                    setPickedLocation(null);
-                    setEditor("stop");
-                  }}
-                  busy={busy}
-                />
-                <div className="itinerary-extras">
-                  <button
-                    className="secondary"
-                    disabled={busy || trip.stops.length >= 6}
-                    onClick={() => {
-                      if (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)
-                        setPicking(true);
-                      else {
-                        setPickedLocation(null);
-                        setEditor("stop");
-                      }
-                    }}
-                  >
-                    <Icon name="pin" size={16} />
-                    {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-                      ? "Pick on map"
-                      : "Add a place"}
-                  </button>
-                  <WeatherCard
-                    weather={trip.weather}
-                    advice={trip.bringAdvice}
-                  />
-                  <ReplanControls trip={trip} busy={busy} onReplan={onReplan} />
-                  <details className="data-note">
-                    <summary>
-                      {trip.source === "demo"
-                        ? "About this sample trip"
-                        : "About your route"}
-                    </summary>
-                    {trip.warnings.map((warning) => (
-                      <p key={warning}>{warning}</p>
-                    ))}
-                    <p>
-                      Your trip stays in this tab. Download the JSON to keep a
-                      copy.
-                    </p>
-                  </details>
-                </div>
-              </>
-            ) : (
-              <div className="panel-empty">
-                <span className="empty-symbol">
-                  <Icon name="route" size={30} />
-                </span>
-                <h2>
-                  A little direction.
-                  <br />A lot of possibility.
-                </h2>
-                <p>
-                  Choose where you’re starting and where you want to go. Your
-                  stops and directions will appear here.
-                </p>
-                <button className="primary" onClick={() => setPanel("plan")}>
-                  Plan your first trip <Icon name="arrow" size={17} />
-                </button>
-              </div>
-            )}
-          </div>
-          {panel === "plan" && (
-            <div className="plan-submit">
-              <button
-                type="submit"
-                form="trip-planner-form"
-                className="primary"
-                disabled={busy}
-              >
-                {busy ? "Finding your route…" : "Plan my day"}
-                <Icon name="arrow" size={18} />
-              </button>
-              <span>Stops stay in your chosen order</span>
-            </div>
-          )}
-          <div className="panel-bottom">
-            <Icon name="clock" size={13} />
-            <span>
-              {trip
-                ? `${spare} minutes left in your time window`
-                : "Your day, at your own pace"}
-            </span>
-            <Icon name="sparkle" size={13} />
+          <div className="plan-submit">
+            <button
+              type="submit"
+              form="trip-planner-form"
+              className="primary"
+              disabled={busy}
+            >
+              <Icon name="route" size={18} />
+              {busy
+                ? "Updating route..."
+                : trip
+                  ? "Update route"
+                  : "Create itinerary"}
+            </button>
           </div>
         </aside>
         <div className="map-canvas">
@@ -395,7 +222,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             selectedId={selectedId}
             onSelect={(id) => {
               selectStop(id);
-              if (id) setPanel("itinerary");
+              if (id) setItineraryOpen(true);
             }}
             picking={picking}
             onPick={(location) => {
@@ -405,105 +232,204 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             }}
             onCancelPick={() => setPicking(false)}
           />
-          {!assistantOpen && (
+          <div className="map-search">
             <button
-              className="assistant-launcher"
-              onClick={() => setAssistantOpen(true)}
+              className="map-search-trigger"
+              aria-expanded={mapSearchOpen}
+              onClick={() => setMapSearchOpen(!mapSearchOpen)}
             >
-              <span>
-                <Icon name="sparkle" size={20} />
-              </span>
-              <div>
-                <strong>A little help along the way</strong>
-                <small>Meet your AI companion · Coming soon</small>
-              </div>
-              <Icon name="arrow" size={17} />
+              <Icon name="search" size={18} />
+              <span>Search places{trip ? " along the route" : ""}</span>
+              <Icon name={mapSearchOpen ? "close" : "plus"} size={16} />
             </button>
+            {mapSearchOpen && (
+              <div className="map-search-results">
+                <PlaceSearch
+                  label="Search map places"
+                  disabled={busy}
+                  near={trip?.request.destination.location}
+                  onSelect={async (place) => {
+                    if (trip) {
+                      const added = await modify({
+                        type: "ADD_STOP",
+                        index: trip.stops.length,
+                        stop: {
+                          ...place,
+                          durationMinutes: 30,
+                          locked: false,
+                          arrivalTime: trip.request.startTime,
+                          reason: "Selected by you.",
+                          priority: "required",
+                        },
+                      });
+                      if (!added) return;
+                      setItineraryOpen(true);
+                    } else setPendingPlace(place);
+                    setMapSearchOpen(false);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          {error && (
+            <div role="alert" className="workspace-error">
+              <span>{error}</span>
+              <button
+                className="icon-button"
+                aria-label="Dismiss error"
+                onClick={() => setError("")}
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </div>
           )}
           {assistantOpen && (
-            <section className="assistant-panel" aria-label="AI companion">
-              <header>
-                <span className="assistant-symbol">
-                  <Icon name="sparkle" size={22} />
-                </span>
-                <div>
-                  <h2>Your travel companion</h2>
-                  <span>AI preview · Not connected</span>
-                </div>
+            <TripChat
+              compact={showItinerary}
+              notes={notes}
+              onSend={(note) => setNotes((previous) => [...previous, note])}
+              onClose={closeChat}
+            />
+          )}
+          <button
+            ref={chatTrigger}
+            className="chat-launcher"
+            aria-label={assistantOpen ? "Close trip chat" : "Open trip chat"}
+            title={assistantOpen ? "Close trip chat" : "Open trip chat"}
+            aria-expanded={assistantOpen}
+            aria-controls="trip-chat"
+            onClick={() =>
+              assistantOpen ? closeChat() : setAssistantOpen(true)
+            }
+          >
+            <Icon name="chat" size={20} />
+          </button>
+          {trip && (
+            <div className="route-summary" aria-label="Route summary">
+              <div>
+                <strong>{travel} min</strong>
+                <span>Travel time</span>
+              </div>
+              <div>
+                <strong>{formatTime(trip.arrivalTime)}</strong>
+                <span>Arrival</span>
+              </div>
+              <div>
+                <strong>{spare} min</strong>
+                <span>Time remaining</span>
+              </div>
+              {!itineraryOpen && (
                 <button
                   className="icon-button"
-                  aria-label="Close AI companion"
-                  onClick={() => setAssistantOpen(false)}
+                  title="Open itinerary"
+                  aria-label="Show itinerary"
+                  onClick={() => setItineraryOpen(true)}
                 >
-                  <Icon name="close" size={18} />
+                  <Icon name="layers" size={18} />
                 </button>
-              </header>
-              <div className="assistant-body">
-                <span className="eyebrow">
-                  LESS PLANNING. MORE POSSIBILITY.
-                </span>
-                <h3>
-                  What would make
-                  <br />
-                  this your kind of day?
-                </h3>
-                <p>
-                  Save a brief for your trip. Gemini will be connected later to
-                  turn requests into proposed changes you can review.
-                </p>
-                <div className="prompt-suggestions">
-                  {[
-                    "Find a quiet café along my route",
-                    "Leave time for a walk by the water",
-                    "Keep my favourite stops, shorten the day",
-                  ].map((prompt) => (
-                    <button key={prompt} onClick={() => setBrief(prompt)}>
-                      <Icon name="plus" size={14} />
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-                {trip && (
-                  <div className="assistant-trip-context">
-                    <Icon name="route" size={18} />
-                    <div>
-                      <strong>{trip.request.destination.name}</strong>
-                      <span>
-                        {trip.stops.length} stops ·{" "}
-                        {trip.request.transportation} · {travel} min travel
-                      </span>
-                    </div>
-                  </div>
-                )}
-                <label htmlFor="trip-brief">
-                  Your trip brief
-                  <textarea
-                    id="trip-brief"
-                    value={brief}
-                    onChange={(e) => setBrief(e.target.value)}
-                    maxLength={1000}
-                    rows={4}
-                    placeholder="I’d like to stop for coffee, visit a bookstore…"
-                  />
-                </label>
-                <button
-                  className="primary"
-                  disabled={!brief.trim()}
-                  onClick={() => setSavedBrief(brief.trim())}
-                >
-                  Save brief for this session <Icon name="check" size={16} />
-                </button>
-                {savedBrief && (
-                  <p className="brief-confirmation">Saved: {savedBrief}</p>
-                )}
-                <p className="assistant-disclosure">
-                  Saving a brief does not change your route. You can add places
-                  and activities from your itinerary now.
-                </p>
-              </div>
-            </section>
+              )}
+            </div>
           )}
         </div>
+        {showItinerary && state && trip && (
+          <aside className="itinerary-panel" aria-label="Itinerary panel">
+            <header className="itinerary-panel-header">
+              <div>
+                <h2>Itinerary</h2>
+                <p>
+                  {trip.stops.length} stops · {travel} min travel
+                </p>
+              </div>
+              <button
+                className="icon-button"
+                aria-label="Close itinerary"
+                title="Close itinerary"
+                onClick={() => setItineraryOpen(false)}
+              >
+                <Icon name="close" size={18} />
+              </button>
+            </header>
+            <div className="itinerary-scroll">
+              <div className="schedule-status">
+                <Icon name="check" size={16} />
+                <span>
+                  {spare > 0
+                    ? `Fits your schedule · ${spare} min remaining`
+                    : "No time remaining"}
+                </span>
+              </div>
+              <p role="status" className="change-message" aria-live="polite">
+                {message}
+              </p>
+              <Itinerary
+                state={state}
+                selectedId={selectedId}
+                onSelect={selectStop}
+                onModify={modify}
+                onActivity={(id) => {
+                  setActivityStop(id);
+                  setEditor("activity");
+                }}
+                onAdd={() => {
+                  setPickedLocation(null);
+                  setEditor("stop");
+                }}
+                busy={busy}
+              />
+              <div className="trip-toolbar">
+                <button
+                  className="secondary"
+                  disabled={busy || trip.stops.length >= 6}
+                  onClick={() => {
+                    if (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY)
+                      setPicking(true);
+                    else {
+                      setPickedLocation(null);
+                      setEditor("stop");
+                    }
+                  }}
+                >
+                  <Icon name="pin" size={16} />
+                  {process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+                    ? "Pick on map"
+                    : "Add a place"}
+                </button>
+                <div className="toolbar-actions">
+                  <button
+                    className="icon-button"
+                    title="Undo last change"
+                    aria-label="Undo last change"
+                    disabled={!history.length || busy}
+                    onClick={undo}
+                  >
+                    <Icon name="undo" size={18} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    title="Download trip JSON"
+                    aria-label="Download trip JSON"
+                    disabled={busy}
+                    onClick={download}
+                  >
+                    <Icon name="download" size={18} />
+                  </button>
+                </div>
+              </div>
+              <details className="itinerary-extras">
+                <summary>Weather and trip updates</summary>
+                <WeatherCard weather={trip.weather} advice={trip.bringAdvice} />
+                <ReplanControls trip={trip} busy={busy} onReplan={onReplan} />
+              </details>
+              <details className="data-note">
+                <summary>Route information</summary>
+                {trip.warnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+                <p>Your trip stays in this tab. Download a copy to keep it.</p>
+              </details>
+            </div>
+          </aside>
+        )}
       </main>
       {editor === "stop" && state && (
         <AddStopDialog

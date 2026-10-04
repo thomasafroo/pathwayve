@@ -15,6 +15,7 @@ export default defineConfig({
       DATA_MODE: "demo",
       MAPS_DATA_MODE: "demo",
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: "",
+      NEXT_DIST_DIR: ".next-e2e",
     },
     timeout: 120_000,
   },

@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Walk" clip-path="url(#clip0_0_92)">
+<path id="Vector" d="M7.33333 5.33333L9.33333 6.66667L10.6667 9.33333M6 14.6667L7.33333 10L5.33333 8M10 14.6667L8.66667 10M8.66667 2.66667C9.02029 2.66667 9.35943 2.52619 9.60948 2.27614C9.85952 2.02609 10 1.68696 10 1.33333C10 0.979711 9.85952 0.640573 9.60948 0.390524C9.35943 0.140476 9.02029 0 8.66667 0C8.31304 0 7.97391 0.140476 7.72386 0.390524C7.47381 0.640573 7.33333 0.979711 7.33333 1.33333C7.33333 1.68696 7.47381 2.02609 7.72386 2.27614C7.97391 2.52619 8.31304 2.66667 8.66667 2.66667Z" stroke="#69756F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_0_92">
+<rect width="16" height="16" fill="white"/>
+</clipPath>
+</defs>
+</svg>

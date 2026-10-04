@@ -106,10 +106,16 @@ function RouteOverlay({
           trip.request.origin.location,
           ...trip.stops.map((s) => s.location),
           trip.request.destination.location,
+          ...trip.legs.flatMap((leg) => leg.path),
         ]
       : endpoints.map((e) => e.location);
     points.forEach((p) => bounds.extend(p));
-    map.fitBounds(bounds, { top: 90, right: 70, bottom: 85, left: 70 });
+    const fit = () =>
+      map.fitBounds(bounds, { top: 100, right: 40, bottom: 110, left: 40 });
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(map.getDiv());
+    return () => observer.disconnect();
   }, [map, trip, fitCount]);
   useEffect(() => {
     const stop = trip?.stops.find((s) => s.id === selectedId);
@@ -178,81 +184,57 @@ function RouteSketch({
         role="img"
         aria-label="Approximate stop positions, not a street map"
       >
-        <defs>
-          <pattern
-            id="map-grid"
-            width="32"
-            height="32"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M 32 0 L 0 0 0 32"
-              fill="none"
-              stroke="#cbd9cf"
-              strokeWidth=".6"
-            />
-          </pattern>
-        </defs>
-        <rect width="800" height="440" fill="#eaf0e8" />
-        <rect width="800" height="440" fill="url(#map-grid)" />
-        <ellipse
-          cx="400"
-          cy="230"
-          rx="275"
-          ry="135"
-          fill="none"
-          stroke="#cfddd0"
-          strokeDasharray="4 9"
-        />
-        <text x="400" y="105" textAnchor="middle" className="sketch-region">
-          YOUR NEXT LITTLE ADVENTURE
-        </text>
-        <polyline
-          points={plotted.map((p) => `${p.x},${p.y}`).join(" ")}
-          fill="none"
-          stroke="#24725c"
-          strokeWidth="3"
-          strokeDasharray="6 7"
-          strokeLinejoin="round"
-        />
-        {plotted.map((point, index) => (
-          <g key={point.id}>
-            <circle
-              cx={point.x}
-              cy={point.y}
-              r={selectedId === point.id ? 24 : 20}
-              fill={
-                index === 0 || index === plotted.length - 1
-                  ? "#fbfcf7"
-                  : "#24725c"
-              }
-              stroke="#24725c"
-              strokeWidth="2"
-            />
-            <text
-              x={point.x}
-              y={point.y + 5}
-              textAnchor="middle"
-              fill={
-                index === 0 || index === plotted.length - 1 ? "#24725c" : "#fff"
-              }
-              fontSize="13"
-              fontWeight="700"
-            >
-              {index === 0 ? "S" : index === plotted.length - 1 ? "E" : index}
-            </text>
-            {(index === 0 || index === plotted.length - 1) && (
+        {trip && (
+          <polyline
+            points={plotted.map((p) => `${p.x},${p.y}`).join(" ")}
+            fill="none"
+            stroke="#356fb3"
+            strokeWidth="3"
+            strokeDasharray="6 7"
+            strokeLinejoin="round"
+          />
+        )}
+        {trip &&
+          plotted.map((point, index) => (
+            <g key={point.id}>
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r={selectedId === point.id ? 24 : 20}
+                fill={
+                  index === 0 || index === plotted.length - 1
+                    ? "#fbfcf7"
+                    : "#24725c"
+                }
+                stroke="#24725c"
+                strokeWidth="2"
+              />
               <text
                 x={point.x}
-                y={point.y + 38}
+                y={point.y + 5}
                 textAnchor="middle"
-                className="sketch-label"
+                fill={
+                  index === 0 || index === plotted.length - 1
+                    ? "#24725c"
+                    : "#fff"
+                }
+                fontSize="13"
+                fontWeight="700"
               >
-                {point.name}
+                {index === 0 ? "S" : index === plotted.length - 1 ? "E" : index}
               </text>
-            )}
-          </g>
-        ))}
+              {(index === 0 || index === plotted.length - 1) && (
+                <text
+                  x={point.x}
+                  y={point.y + 38}
+                  textAnchor="middle"
+                  className="sketch-label"
+                >
+                  {point.name}
+                </text>
+              )}
+            </g>
+          ))}
       </svg>
       {trip && (
         <div
@@ -273,9 +255,7 @@ function RouteSketch({
       )}
       <div className="map-setup-note">
         <Icon name="layers" size={16} />
-        <span>
-          Route sketch · Google Maps connects when a map key is configured
-        </span>
+        <span>Route preview · Approximate positions</span>
       </div>
     </div>
   );
@@ -365,13 +345,14 @@ export function Map(props: MapProps) {
       {key && (
         <button
           className="fit-map"
+          aria-label="Fit route"
+          title="Fit route"
           onClick={() => {
             setFollow(false);
             setFitCount((n) => n + 1);
           }}
         >
-          <Icon name="route" size={16} />
-          Fit route
+          <Icon name="fit" size={18} />
         </button>
       )}
       <div className="location-controls">

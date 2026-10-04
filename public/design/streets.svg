@@ -1,0 +1,24 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="720" height="896" viewBox="0 0 720 896" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Editable street grid" clip-path="url(#clip0_0_74)">
+<path id="Vector" d="M720 0H0V896H720V0Z" fill="#EEF1EF"/>
+<g id="Group">
+<path id="Vector_2" d="M-40 120C120 78 210 162 370 126C530 90 620 104 760 42" stroke="#D8DEDA" stroke-width="3"/>
+<path id="Vector_3" d="M-20 272C120 214 228 230 362 278C496 326 612 316 750 260" stroke="#D8DEDA" stroke-width="3"/>
+<path id="Vector_4" d="M-30 470C132 518 232 422 366 454C500 486 602 536 756 478" stroke="#D8DEDA" stroke-width="3"/>
+<path id="Vector_5" d="M-40 710C116 650 242 674 370 732C498 790 614 774 760 708" stroke="#D8DEDA" stroke-width="3"/>
+<path id="Vector_6" d="M90 -30C72 124 124 240 92 390C60 540 104 678 72 920" stroke="#D8DEDA" stroke-width="3"/>
+<path id="Vector_7" d="M250 -20C294 118 226 234 268 368C310 502 260 676 302 916" stroke="#D8DEDA" stroke-width="3"/>
+<path id="Vector_8" d="M456 -20C408 138 474 276 440 414C406 552 450 694 412 916" stroke="#D8DEDA" stroke-width="3"/>
+<path id="Vector_9" d="M620 -20C640 118 594 240 626 372C658 504 606 674 640 916" stroke="#D8DEDA" stroke-width="3"/>
+</g>
+<g id="Group_2">
+<path id="Vector_10" d="M20 196H680M18 566H702M162 0V896M352 0V896M548 0V896" stroke="#E4E8E5" stroke-width="1.5"/>
+</g>
+<path id="Vector_11" d="M0 815C168 769 274 807 416 841C558 875 636 859 720 819V896H0V815Z" fill="#DFEAE7"/>
+</g>
+<defs>
+<clipPath id="clip0_0_74">
+<rect width="720" height="896" fill="white"/>
+</clipPath>
+</defs>
+</svg>

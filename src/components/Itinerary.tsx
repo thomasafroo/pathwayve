@@ -29,9 +29,8 @@ export function Itinerary({
     >
       <div className="section-heading">
         <div>
-          <p className="eyebrow">THE DAY, UNFOLDED</p>
           <h2 id="itinerary-heading">
-            Your itinerary
+            Stops
             <span className="count-badge">{trip.stops.length} stops</span>
           </h2>
         </div>
@@ -145,11 +144,11 @@ export function Itinerary({
           <strong>{trip.request.destination.name}</strong>
           <span>Arrive around {formatTime(trip.arrivalTime)}</span>
         </div>
-        <span className="endpoint-label">YOU MADE IT</span>
+        <span className="endpoint-label">END</span>
       </div>
       {!trip.stops.length && (
         <p className="hint">
-          Just the journey for now. Add a stop to make it your own.
+          Direct route. Add a stop to make time for a visit.
         </p>
       )}
       <p className="timeline-footnote">
