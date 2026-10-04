@@ -1115,7 +1115,7 @@ body {
 }
 .maps-workspace .location-controls {
   right: 20px;
-  top: 76px;
+  top: 128px;
   z-index: 3;
 }
 .maps-workspace .location-button {
@@ -1476,8 +1476,8 @@ body {
   z-index: 1000;
 }
 .maps-workspace .route-fit-control {
-  top: auto;
-  bottom: 100px;
+  top: 72px;
+  bottom: auto;
 }
 .chat-message {
   white-space: pre-wrap;

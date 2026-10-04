@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   APIProvider,
   Map as GoogleMap,
+  ControlPosition,
   AdvancedMarker,
   useMap,
   useApiLoadingStatus,
@@ -361,6 +362,7 @@ export function Map(props: MapProps) {
             disableDefaultUI
             clickableIcons={false}
             zoomControl
+            zoomControlOptions={{ position: ControlPosition.RIGHT_BOTTOM }}
             streetViewControl={false}
             style={{ width: "100%", height: "100%" }}
             onClick={(event) => {
