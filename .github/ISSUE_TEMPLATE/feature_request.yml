@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest an improvement to the planning experience.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the user problem or missing workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed experience
+      description: Explain how the improvement would work from the user's perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and context
+      description: Workarounds, examples, or sketches that help explain the idea.
+  - type: textarea
+    id: success
+    attributes:
+      label: What would success look like?
+      description: A concrete example of the outcome this should enable.

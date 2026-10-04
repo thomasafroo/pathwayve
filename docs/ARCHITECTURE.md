@@ -39,7 +39,7 @@ provider modules cannot enter the client bundle.
 
 ## Current limits
 
-The frontend is desktop-only. Paid APIs require separately configured browser and
+The frontend is designed primarily for desktop planning. Paid APIs require separately configured browser and
 server keys. Map loading is independent of route/search data. Live provider failure
 never silently falls back to samples. Default window is now to local end of day;
 explicit multi-day windows up to 31 days are accepted, but automatic overnight
@@ -50,13 +50,32 @@ on ratings, straight-line distance, and session favourites. Exact selected stops
 are required by default. Route priority applies within the chosen transport mode;
 there is no automatic comparison across modes or worldwide optimum guarantee.
 
-Trips and favourites are not persisted. Version checks are relative to the
-submitted workspace, not an authoritative database. Add authentication and a
-shared rate limiter before publicly deploying paid endpoints. Weather is advisory
+Saved schedules persist in PostgreSQL and are scoped to the authenticated user;
+unsaved workspace edits and favourites remain session state. Version checks for
+manual edits are relative to the submitted workspace, not an authoritative
+database. Review paid-endpoint access controls and add a shared rate limiter
+before public deployment. Weather is advisory
 Google Weather API data, on when the Maps server key is configured. Bring advice is deterministic clothing
 and accessory classification from weather facts, not AI-generated guidance.
-Weather-aware route optimization, real-time TransLink, conversational
-interpretation, and AI execution are not implemented.
+Weather-aware route optimization, real-time TransLink integration, and automated
+AI task execution are not implemented. Conversational schedule generation is
+implemented separately in `lib/schedule-gemini.ts` and `lib/schedule-planning.ts`.
+
+## Schedules, accounts, and calendar
+
+Chat sends a validated request to `/api/schedules/preview`. Gemini produces a
+structured draft; the application resolves places, applies constraints, and
+computes travel before returning a preview. Fresh browser coordinates are passed
+only while location tracking is enabled.
+
+Saving uses `/api/schedules` and authenticated ownership checks. Google OAuth is
+handled by Better Auth. PostgreSQL stores schedules and account data; local
+development can use PGlite. See [authentication](AUTH.md) and
+[AI schedules](AI-SCHEDULES.md) for the schemas and save lifecycle.
+
+Google Calendar has its own consent and callback flow. Imports can constrain
+planning around busy time, and exports create PathWayve-managed copies. File-based
+calendar editing uses ICAL.js. See [Calendar](calendar.md) for sync boundaries.
 
 See [FRONTEND.md](FRONTEND.md) for setup, full JSON semantics, integration boundaries,
 and verification limits.

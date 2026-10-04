@@ -1,91 +1,84 @@
-# PathWayve
+<p align="center">
+  <a href="https://www.pathwayve.tech/">
+    <img src="public/brand/pathwayve-logo.svg" alt="PathWayve" width="460" />
+  </a>
+</p>
 
-A desktop trip planner for choosing your own places, exploring ranked suggestions,
-and adapting your itinerary. Built with Next.js, React, TypeScript, Google Maps,
-and a Gemini prompt-to-JSON-to-SQL schedule pipeline.
+<h1 align="center">Make room for the day you want.</h1>
 
-## Run locally
+<p align="center">Your places, your time, your day — brought together in one itinerary.</p>
 
-Requires Node.js 22.14+ (Node 22 recommended).
+<p align="center">
+  <strong><a href="https://www.pathwayve.tech/">Open PathWayve ↗</a></strong>
+</p>
 
-```sh
-npm ci
-cp .env.example .env.local
-npm run dev
-```
+---
 
-Open [localhost:3000](http://localhost:3000). If you already use `.env`, configure
-that file instead of introducing competing values in `.env.local`. Environment
-files are ignored by Git. Restart the dev server after changing keys.
+PathWayve turns “here’s what I want to do today” into a plan you can see, shape,
+and keep. Find a breakfast spot along the way, make time for a movie, fit in your
+errands, and know how the journey fits your day.
 
-## Enable Google geography without Gemini
+Describe what you have in mind or choose your own stops. PathWayve brings the
+map, travel time, and schedule together so you can spend less time piecing things
+together and more time enjoying where you’re going.
 
-- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`: browser key, restricted to Maps JavaScript API
-  and your localhost/deployed website origins.
-- `GOOGLE_MAPS_SERVER_API_KEY`: separate server key, restricted to Places API (New)
-  and Routes API. Do not use website-referrer restrictions for server requests.
-- `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=DEMO_MAP_ID`: development marker support.
+## Explore the project
 
-Enable those APIs and billing in Google Cloud. A server key automatically enables
-live search and routing. `MAPS_DATA_MODE=demo` forces samples; `MAPS_DATA_MODE=live`
-requires the server key. Keep `DATA_MODE=demo`; no Gemini key is needed and the
-manual planner does not invoke Gemini.
+| Guide                                          | What you’ll find                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------- |
+| [**Installation**](docs/GETTING-STARTED.md)    | Run PathWayve locally and configure your environment.               |
+| [**APIs & integrations**](docs/APIS.md)        | Maps, AI planning, accounts, weather, voice, and calendar services. |
+| [**Architecture**](docs/ARCHITECTURE.md)       | How the workspace, planning services, and storage fit together.     |
+| [**Accounts & saved schedules**](docs/AUTH.md) | Google sign-in and private saved schedules.                         |
+| [**Calendar**](docs/calendar.md)               | Connect Google Calendar or work with calendar files.                |
+| [**Contributing**](CONTRIBUTING.md)            | Development workflow, checks, and pull requests.                    |
+| [**All documentation**](docs/README.md)        | Browse the complete guide index.                                    |
 
-Without a server key, “Load sample trip” demonstrates fictional stops and estimated
-travel. The browser map alone does not enable internet place search or real routes.
-Live failures are shown rather than replaced with samples.
+## Plan a day that feels like yours
 
-Plans include Google Weather API hourly destination weather (up to 10 days ahead)
-using `GOOGLE_MAPS_SERVER_API_KEY`; enable the Weather API for that key's Google
-Cloud project. Set `WEATHER_DATA_MODE=off` to disable it. Weather is fetched as structured forecast data; no LLM generates or
-interprets conditions. The backend also turns those facts into playful
-deterministic “what to bring” advice.
+### Start with an idea
 
-Chat schedules use Gemini with Grounding with Google Maps to pick and explain stops.
-Each stop gets a "Why this stop" note built from Google Maps place details and
-reviews, with links to its sources. Requested seating, quiet or wifi is marked
-verified only when the Google Maps data says so. Set `MAPS_GROUNDING=off` to
-disable it. See [docs/AI-SCHEDULES.md](docs/AI-SCHEDULES.md#grounding-with-google-maps).
+Tell PathWayve where you’re heading, what you’d like to do, and when you need to
+arrive. Add your interests, budget, and travel preferences, or build the whole
+route yourself. When location tracking is enabled, you can start from where you are.
 
-## Included
+### See how it fits
 
-- Desktop map with selected markers and transport-specific route geometry.
-- Arbitrary start/destination and stop search through Google Places.
-- User-chosen stops, optional ranked suggestions, and session favourites.
-- Interests, budget, free-text preferences, and transit route priorities.
-- Now-to-end-of-day defaults and explicit date ranges in JSON.
-- Stop/activity editing, locks, atomic modifications, undo, and JSON export.
-- Weather-based clothing/accessory advice when live weather is enabled.
-- Runtime validation, unit/provider tests, and desktop browser tests.
+Explore your stops on the map alongside your itinerary. Choose transit, walking,
+or driving, review travel time, and see how long you have at each place. Opening
+hours, source-linked place explanations, and destination forecasts provide
+context for your decisions.
 
-The chat composer uses Gemini to preview a structured schedule and resolve
-locations/routes. Anyone can plan; **Save schedule** prompts Google login and saves
-the exact schedule to the user's private account. **My schedules** reopens saves.
-Configure Google OAuth using [authentication setup](docs/AUTH.md).
-Set `GEMINI_API_KEY`; local development uses
-embedded PostgreSQL automatically, or set `DATABASE_URL` / `TIGER_DATABASE_URL`
-and run `npm run db:migrate`. See [AI schedules](docs/AI-SCHEDULES.md) for contracts,
-database setup and verification limits.
+### Change your mind along the way
 
-Multi-day overnight planning, persistent favourites, weather-aware route
-optimization, and active-trip navigation are future features. Ranking uses a
-transparent heuristic; it does not claim personalized AI recommendations.
+Move stops, adjust visit lengths, and decide which places are essential. Keep
+refining the plan through chat or edit it directly in the workspace.
 
-See [frontend and API setup](docs/FRONTEND.md), [architecture](docs/ARCHITECTURE.md),
-and [team workflow](CONTRIBUTING.md).
+### Keep the plans you love
 
-## Checks
+Explore as a guest, then sign in with Google to save your schedule privately.
+Reopen it later from your account. Connect Google Calendar to plan around busy
+time, export an itinerary, or import and export `.ics` files.
 
-```sh
-npm run check
-npm run build
-npm run test:e2e
-npm run format:check
-```
+## From an idea to an itinerary
 
-If local Turbopack workers cannot bind a port, `npm run build -- --webpack` is an
-alternative build check. The browser suite needs Chromium (`npx playwright install
-chromium`) and forces demo geography. Live Places/Routes verification requires a
-valid server key. Public paid endpoints need authentication and a shared rate
-limiter before deployment. Known dependency advisories are in
-[docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+> “I’m heading from SFU to UBC. Find breakfast along the way, a movie theater
+> downtown, and a No Frills near UBC. Give me 90 minutes at each stop. I’m leaving
+> at 8 AM and need to arrive by 10 PM.”
+
+PathWayve uses your request to build a proposed schedule, resolve places, and
+calculate travel. You review the result and adjust the details before saving.
+
+## Good to know
+
+PathWayve is designed primarily for desktop planning. Location and route-following
+features work while the page is active. Calendar connections use explicit import
+and export. Opening hours and forecasts help inform a plan; movie showtimes,
+bookings, and hotel availability still need separate confirmation.
+
+---
+
+<p align="center">
+  <strong>Your next day out starts here.</strong><br />
+  <a href="https://www.pathwayve.tech/">Start planning at pathwayve.tech</a>
+</p>

@@ -1,7 +1,8 @@
 # Desktop trip workspace
 
-This milestone targets desktop web browsers. The map, form, itinerary, and
-editing tools consume JSON; no Gemini request is made by the current plan flow.
+The workspace primarily targets desktop web browsers. The map, form, itinerary,
+and editing tools consume JSON. Manual planning does not call Gemini; the separate
+chat flow uses it to generate structured schedules. See [AI schedules](AI-SCHEDULES.md).
 
 ## Geographic APIs
 

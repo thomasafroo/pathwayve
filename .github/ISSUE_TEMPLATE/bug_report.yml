@@ -1,0 +1,44 @@
+name: Bug report
+description: Report something that is not working as expected.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for helping improve PathWayve. Remove credentials, private calendar details, and personal locations from examples."
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Explain the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal prompt or sequence of actions, if applicable.
+      placeholder: "1. Open the planner…"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Data mode
+      options:
+        - Demo / sample trip
+        - Live providers
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "Browser/version, device/OS, local or hosted, branch/commit if known"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or logs
+      description: Optional supporting details. Redact private information.
