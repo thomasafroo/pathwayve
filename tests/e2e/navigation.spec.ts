@@ -1,4 +1,10 @@
 import { expect, test } from "@playwright/test";
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    sessionStorage.setItem("pathwayve.welcomed", "true"),
+  );
+});
 test("live navigation uses GPS, steps through stops, and releases tracking", async ({
   page,
 }) => {

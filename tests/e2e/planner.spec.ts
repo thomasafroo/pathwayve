@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    sessionStorage.setItem("pathwayve.welcomed", "true"),
+  );
+});
+
 // Typing before hydration races React's replay of the input event. The header's
 // session check is requested from an effect, so it only fires once hydrated.
 async function gotoHydrated(page: import("@playwright/test").Page) {

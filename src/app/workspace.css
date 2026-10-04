@@ -1547,6 +1547,9 @@ body {
   color: #a12b25;
 }
 .account-dialog {
+  margin: auto;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   width: min(440px, calc(100vw - 32px));
   padding: 28px;
   border: 1px solid #e5e7eb;
@@ -1572,6 +1575,185 @@ body {
   display: block;
   width: 100%;
   margin: 24px 0 12px;
+}
+.maps-workspace .account-controls > .account-entry {
+  width: 108px;
+  height: 46px;
+  padding: 10px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-dialog {
+  text-align: center;
+}
+.account-dialog .keep-planning {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin: 16px auto 0;
+  font-size: 16px;
+}
+.clear-planning {
+  margin-bottom: 20px;
+}
+.welcome-dialog {
+  margin: auto;
+  padding: 48px;
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 24px 100px #10292422;
+}
+.welcome-dialog::backdrop {
+  background: #f6f7f2;
+}
+.welcome-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr;
+  align-items: center;
+  gap: 56px;
+  min-height: 350px;
+}
+.welcome-brand {
+  text-align: center;
+  transform: translateX(190px);
+}
+.welcome-brand > span {
+  display: block;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+.welcome-mark {
+  width: 190px;
+  max-width: 100%;
+  margin: auto auto 20px;
+}
+.welcome-trace {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.welcome-dot {
+  offset-path: path(
+    "M40 199V72C40 43 59 27 87 27H98C130 27 150 46 150 76C150 106 130 125 98 125H69L99 194L129 140L159 194L197 125"
+  );
+}
+.welcome-options {
+  opacity: 0;
+  visibility: hidden;
+}
+.welcome-options h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.15;
+  letter-spacing: -1.4px;
+  margin: 12px 0 18px;
+}
+.welcome-options p {
+  line-height: 1.65;
+  color: var(--muted);
+}
+.welcome-options .welcome-eyebrow {
+  color: var(--green);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.welcome-auth-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 28px;
+}
+.welcome-auth-actions button,
+.welcome-guest {
+  width: 100%;
+  min-height: 48px;
+}
+.welcome-guest {
+  margin-top: 12px;
+}
+.welcome-dialog[open] .welcome-trace {
+  animation: welcome-draw 2.1s linear forwards;
+}
+.welcome-dialog[open] .welcome-tip {
+  animation: welcome-draw 0.3s 2.1s linear forwards;
+}
+.welcome-dialog[open] .welcome-dot {
+  animation: welcome-walk 2.4s linear forwards;
+}
+.welcome-dialog[open] .welcome-brand {
+  animation: welcome-slide 0.7s 2.7s ease-in-out forwards;
+}
+.welcome-dialog[open] .welcome-options {
+  animation: welcome-reveal 0.6s 3.1s ease forwards;
+}
+@keyframes welcome-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes welcome-walk {
+  to {
+    offset-distance: 100%;
+  }
+}
+@keyframes welcome-slide {
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes welcome-reveal {
+  to {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+@media (max-width: 640px) {
+  .welcome-dialog {
+    padding: 28px;
+  }
+  .welcome-layout {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .welcome-brand {
+    transform: translateY(140px);
+  }
+  .welcome-mark {
+    width: 100px;
+    margin-bottom: 8px;
+  }
+  .welcome-brand > span {
+    font-size: 24px;
+  }
+  .welcome-options {
+    text-align: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-dialog[open] .welcome-trace,
+  .welcome-dialog[open] .welcome-dot,
+  .welcome-dialog[open] .welcome-brand,
+  .welcome-dialog[open] .welcome-options {
+    animation: none;
+  }
+  .welcome-trace {
+    stroke-dashoffset: 0;
+  }
+  .welcome-dot {
+    display: none;
+  }
+  .welcome-brand {
+    transform: none;
+  }
+  .welcome-options {
+    opacity: 1;
+    visibility: visible;
+  }
 }
 .account-dialog .saved-schedule-list {
   max-height: 50vh;

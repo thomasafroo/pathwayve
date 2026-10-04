@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    sessionStorage.setItem("pathwayve.welcomed", "true"),
+  );
+});
+
 const id = "11111111-1111-4111-8111-111111111111";
 const document = {
   schema_version: 1,
