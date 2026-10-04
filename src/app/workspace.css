@@ -1599,3 +1599,88 @@ body {
     justify-content: flex-end;
   }
 }
+
+.place-insight {
+  margin: 8px 0 10px;
+  padding: 9px 10px;
+  border: 1px solid #dde7e1;
+  border-radius: 8px;
+  background: #f6faf7;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #34443c;
+}
+.place-insight-summary {
+  margin: 0;
+}
+.place-insight-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #527169;
+  margin-bottom: 2px;
+}
+.place-insight-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  margin: 7px 0 0;
+  padding: 0;
+}
+.place-insight-tags li {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #e7efe9;
+  color: #3f5a51;
+  font-size: 10px;
+}
+.place-insight-tags li.verified {
+  background: #dcefdc;
+  color: #2f6b3a;
+  font-weight: 600;
+}
+.place-insight-concern {
+  margin: 6px 0 0;
+  color: #8a5a1c;
+}
+.place-insight-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 7px;
+  color: #5e5e5e;
+  font-size: 10px;
+}
+.place-insight-sources a,
+.place-insight-reviews a {
+  color: #2f6b5c;
+}
+.google-maps-attribution {
+  font-family: Roboto, Arial, sans-serif;
+  color: #5e5e5e;
+}
+.google-maps-attribution::before {
+  content: "· ";
+}
+.place-insight-reviews {
+  margin-top: 4px;
+  font-size: 10px;
+}
+.place-insight-reviews summary {
+  cursor: pointer;
+  color: #527169;
+}
+.place-insight-reviews ul {
+  margin: 4px 0 0;
+  padding-left: 14px;
+}
+.place-insight-reviews li {
+  margin: 3px 0;
+}
+.place-insight-reviews q {
+  font-style: italic;
+}

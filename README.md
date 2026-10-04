@@ -41,6 +41,12 @@ Cloud project. Set `WEATHER_DATA_MODE=off` to disable it. Weather is fetched as 
 interprets conditions. The backend also turns those facts into playful
 deterministic “what to bring” advice.
 
+Chat schedules use Gemini with Grounding with Google Maps to pick and explain stops.
+Each stop gets a "Why this stop" note built from Google Maps place details and
+reviews, with links to its sources. Requested seating, quiet or wifi is marked
+verified only when the Google Maps data says so. Set `MAPS_GROUNDING=off` to
+disable it. See [docs/AI-SCHEDULES.md](docs/AI-SCHEDULES.md#grounding-with-google-maps).
+
 ## Included
 
 - Desktop map with selected markers and transport-specific route geometry.

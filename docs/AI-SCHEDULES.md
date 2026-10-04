@@ -150,9 +150,13 @@ Gemini must classify each item with `location_scope: specific | along_route` and
 filter. Generic queries retain their category intent rather than a model-invented
 venue name. The server computes a baseline route through existing places, samples
 up to five points on its provider geometry, searches Places, and filters candidates
-by distance to the actual route segments. It evaluates up to three nearby candidates
+by distance to the actual route segments. It evaluates up to five nearby candidates
 with complete Routes journeys in the selected mode, including appointment waits and
-visit durations, then chooses the feasible candidate with the earliest final arrival.
+visit durations. At the same time, Gemini assesses those candidates with Grounding
+with Google Maps (see below). The server keeps feasible candidates and prefers
+ones whose requested amenities are verified, then the best score. Each point of
+Google Maps fit (0–10) is worth five minutes of extra travel. Without grounding,
+the earliest final arrival wins.
 No candidate is added when that would displace an existing visit or violate the end
 time. Transit legs are recalculated at their scheduled departure times.
 
@@ -163,6 +167,32 @@ actual travel feasibility. An unsuccessful generic search remains unscheduled wi
 and Places matching. No automatic widening beyond the chosen radius is performed.
 The added intent classification fields do not change SQL columns; resolved IDs,
 required status, placements, and provider geometry use the existing persistence model.
+
+### Grounding with Google Maps
+
+`src/lib/maps-grounding.ts` asks Gemini to check candidate places against the
+item's title (the user's own wording, such as "quiet café to work") and the
+sidebar preferences, interests and budget. It uses the `googleMaps` tool, with
+the route location as `retrievalConfig.latLng` and thinking level LOW (about 5–10 s).
+Gemini does not allow JSON mode with the Maps tool. Its JSON answer is parsed
+leniently, and any failure, timeout or unparsable reply leaves places unannotated
+rather than failing the plan. Safeguards against hallucination:
+
+- A place only receives an insight when the response's `groundingMetadata`
+  contains Google Maps chunks for that exact place ID.
+- A seating, quiet or wifi requirement counts as verified only when Gemini quotes
+  evidence that appears verbatim in those chunks. Verified requirements let
+  tasks that need seating, quiet or wifi be scheduled; before, they were always
+  `REQUIREMENTS_UNVERIFIED`.
+- Named and sidebar places are checked in one batched call that runs alongside
+  order optimization. Places that already have an insight are not checked again.
+
+Insights (`candidatePlaceSchema.insight`) show a summary, highlights, verified
+amenities, concerns and their Google Maps sources: a place link plus the reviews
+used. These follow the summary directly, as the Grounding with Google Maps terms
+require. The feature is on whenever Maps data is live and `GEMINI_API_KEY` is set.
+Set `MAPS_GROUNDING=off` to disable it, or `GEMINI_GROUNDING_MODEL` to use a
+different model. Each grounded request is billed by Google.
 
 Sidebar stop order uses `orderPolicy: preserve | optimize` in manual requests
 and chat constraints (omitted means preserve). Up/down controls switch to

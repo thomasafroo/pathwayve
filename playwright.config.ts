@@ -16,6 +16,7 @@ export default defineConfig({
       MAPS_DATA_MODE: "demo",
       // Keep tests offline even when a developer's .env enables live weather.
       WEATHER_DATA_MODE: "off",
+      MAPS_GROUNDING: "off",
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: "",
       NEXT_DIST_DIR: ".next-e2e",
       DATABASE_URL: "",

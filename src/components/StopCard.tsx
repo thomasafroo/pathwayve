@@ -1,4 +1,5 @@
 import { PlaceHours } from "./PlaceHours";
+import { PlaceInsight } from "./PlaceInsight";
 import type { TripStop } from "@/types/trip";
 import type { Activity, TripModification } from "@/types/workspace";
 import { Icon } from "./Icon";
@@ -76,6 +77,7 @@ export function StopCard({
         </div>
         <PlaceHours place={stop} />
         <p className="stop-reason">{stop.reason}</p>
+        {stop.insight && <PlaceInsight insight={stop.insight} />}
         <div className="stop-actions">
           <label className="duration-field">
             <Icon name="clock" size={14} />

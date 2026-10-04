@@ -19,6 +19,30 @@ export const endpointSchema = z.object({
   location: locationSchema,
   placeId: z.string().optional(),
 });
+// Gemini's assessment of a place, grounded in Google Maps data. Sources must be
+// shown with the insight (Grounding with Google Maps display requirements).
+export const placeInsightSchema = z.object({
+  provider: z.literal("google_maps_grounding"),
+  checkedFor: z.string().max(300),
+  summary: z.string().min(1).max(600),
+  highlights: z.array(z.string().max(100)).max(4),
+  concerns: z.string().max(300).optional(),
+  fit: z.number().int().min(0).max(10),
+  // Requested amenities confirmed by a quote found in the Google Maps data.
+  verified: z.array(z.enum(["seating", "quiet", "wifi"])).max(3),
+  sources: z
+    .array(
+      z.object({
+        kind: z.enum(["place", "review"]),
+        title: z.string().min(1).max(200),
+        uri: z.url(),
+        excerpt: z.string().max(400).optional(),
+      }),
+    )
+    .min(1)
+    .max(4),
+  checkedAt: z.iso.datetime({ offset: true }),
+});
 export const candidatePlaceSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -31,6 +55,7 @@ export const candidatePlaceSchema = z.object({
   mapsUrl: z.url().optional(),
   attribution: z.string().optional(),
   openingHours: openingHoursSchema.optional(),
+  insight: placeInsightSchema.optional(),
 });
 export const tripRequestSchema = z
   .object({
@@ -210,6 +235,7 @@ export const replanRequestSchema = z.object({
 export type Location = z.infer<typeof locationSchema>;
 export type TripRequestInput = z.input<typeof tripRequestSchema>;
 export type TripRequest = z.infer<typeof tripRequestSchema>;
+export type PlaceInsight = z.infer<typeof placeInsightSchema>;
 export type CandidatePlace = z.infer<typeof candidatePlaceSchema>;
 export type TripStop = z.infer<typeof tripStopSchema>;
 export type RouteLeg = z.infer<typeof routeLegSchema>;
