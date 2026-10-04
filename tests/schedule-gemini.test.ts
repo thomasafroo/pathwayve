@@ -343,3 +343,17 @@ it.each([false, true])(
     }
   },
 );
+
+it("repairs invalid sequence output once instead of failing an otherwise usable request", async () => {
+  const invalid = scheduleIntent();
+  invalid.schedule_items.push({ ...invalid.schedule_items[0] });
+  generateContent
+    .mockResolvedValueOnce({ text: JSON.stringify(invalid) })
+    .mockResolvedValueOnce({ text: JSON.stringify(scheduleIntent()) });
+  const result = await generateSchedule(request);
+  expect(result.schedule_items).toHaveLength(1);
+  expect(generateContent).toHaveBeenCalledTimes(2);
+  expect(
+    JSON.parse(generateContent.mock.calls[1][0].contents).validation_feedback,
+  ).toContain("Duplicate sequence");
+});

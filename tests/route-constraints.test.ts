@@ -570,3 +570,64 @@ it("leaves a geographic request unresolved when every candidate is outside its a
   expect(document.schedule_items[0].place_id).toBeNull();
   expect(document.schedule_runs[0].status).toBe("infeasible");
 });
+
+it("chooses three distinct open area cafes instead of reusing the nearest closed cafe", async () => {
+  const closed = {
+    ...place("Closed cafe", 49.29, -123.14),
+    openingHours: {
+      timeZone: "America/Vancouver",
+      checkedAt: "2030-10-04T19:00:00Z",
+      regular: { periods: [] },
+    },
+  };
+  const cafes = [
+    closed,
+    ...[1, 2, 3].map((i) => ({
+      ...place(`Open cafe ${i}`, 49.29 + i * 0.001, -123.14),
+      openingHours: {
+        timeZone: "America/Vancouver",
+        checkedAt: "2030-10-04T19:00:00Z",
+        regular: {
+          periods: [
+            {
+              open: { day: 5, hour: 8, minute: 0 },
+              close: { day: 5, hour: 20, minute: 0 },
+            },
+          ],
+        },
+      },
+    })),
+  ];
+  vi.mocked(searchPlaces).mockImplementation(async ({ query }) => ({
+    source: "live",
+    places: query === "Burnaby" ? [requiredPlace] : cafes,
+  }));
+  const input = constraints();
+  input.selectedStops = [];
+  const draft = scheduleIntent();
+  const template = draft.schedule_items[0];
+  draft.schedule_items = [0, 1, 2].map((index) => ({
+    ...template,
+    title: `Coffee shop ${index + 1} in Burnaby`,
+    place_query: "coffee shops in Burnaby",
+    preferred_sequence: index,
+    duration_minutes: 30,
+    priority: "required",
+  }));
+  const { document, workspace } = await materializeSchedule(
+    draft,
+    owner,
+    input,
+  );
+  expect(document.schedule_runs[0].status).toBe("feasible");
+  expect(workspace?.trip.stops.map((stop) => stop.id)).toEqual([
+    "Open cafe 1",
+    "Open cafe 2",
+    "Open cafe 3",
+  ]);
+  expect(document.schedule_items.map((item) => item.place_id)).toEqual([
+    "Open cafe 1",
+    "Open cafe 2",
+    "Open cafe 3",
+  ]);
+});

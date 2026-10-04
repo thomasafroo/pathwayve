@@ -125,6 +125,7 @@ export async function materializeSchedule(
   }));
   const places = new Map<string, CandidatePlace>();
   const genericIds = new Set<string>();
+  const areaCandidates = new Map<string, CandidatePlace[]>();
   // Sidebar provider IDs/coordinates are authoritative: never search their names again.
   for (const [index, item] of items.entries()) {
     const model = draft.schedule_items[index];
@@ -189,15 +190,25 @@ export async function materializeSchedule(
             near: anchor.location,
             radiusMeters,
           });
-          place =
-            response.places
-              .filter((candidate) => !excludedPlaceIds.includes(candidate.id))
-              .map((candidate) => ({
-                candidate,
-                distance: distanceMeters(anchor.location, candidate.location),
-              }))
-              .filter(({ distance }) => distance <= radiusMeters)
-              .sort((a, b) => a.distance - b.distance)[0]?.candidate ?? null;
+          const candidates = response.places
+            .filter((candidate) => !excludedPlaceIds.includes(candidate.id))
+            .map((candidate) => ({
+              candidate,
+              distance: distanceMeters(anchor.location, candidate.location),
+            }))
+            .filter(({ distance }) => distance <= radiusMeters)
+            .sort((a, b) => a.distance - b.distance)
+            .map(({ candidate }) => candidate);
+          place = candidates[0] ?? null;
+          // A category request asks us to recommend a venue, not commit to the
+          // nearest result regardless of closure or repeated visits.
+          if (
+            /^(?:(?:first|second|third|another)\s+)?(?:coffee shops?|caf[eé]s?|restaurants?|bookstores?|bakeries)(?:\s|$)/i.test(
+              item.place_query,
+            )
+          ) {
+            areaCandidates.set(item.id, candidates);
+          }
         }
       } else {
         place = await find(item.place_query, undefined, true);
@@ -391,7 +402,71 @@ export async function materializeSchedule(
   };
   try {
     for (const item of ordered) {
-      const place = places.get(item.id);
+      let place = places.get(item.id);
+      const candidates = areaCandidates.get(item.id);
+      if (candidates) {
+        place = undefined;
+        for (const candidate of candidates) {
+          if (stops.some((stop) => stop.id === candidate.id)) continue;
+          try {
+            const candidateLeg = await computeScheduleLeg(
+              cursor,
+              candidate,
+              request,
+              new Date(time).toISOString(),
+            );
+            const arrival = time + candidateLeg.durationMinutes * 60000;
+            const requestedStart = item.fixed_start_at
+              ? Date.parse(item.fixed_start_at)
+              : Math.max(
+                  arrival,
+                  item.earliest_start_at
+                    ? Date.parse(item.earliest_start_at)
+                    : arrival,
+                );
+            if (requestedStart < arrival) continue;
+            const window = visitWindow(
+              candidate,
+              requestedStart,
+              item.duration_minutes,
+              Math.min(
+                Date.parse(schedule.ends_at),
+                item.latest_end_at ? Date.parse(item.latest_end_at) : Infinity,
+              ),
+              !!item.fixed_start_at,
+            );
+            if (!window) continue;
+            const finish = window.start + item.duration_minutes * 60000;
+            const onward = await computeScheduleLeg(
+              candidate,
+              destination,
+              request,
+              new Date(finish).toISOString(),
+            );
+            if (
+              finish + onward.durationMinutes * 60000 >
+              Date.parse(schedule.ends_at)
+            )
+              continue;
+            place = candidate;
+            places.set(item.id, candidate);
+            item.place_id = candidate.id;
+            break;
+          } catch (error) {
+            if (!(error instanceof AppError && error.code === "NO_ROUTE"))
+              throw error;
+          }
+        }
+        if (!place) {
+          item.place_id = null;
+          unavailable(
+            item,
+            "NO_FEASIBLE_AREA_PLACE",
+            "No distinct place from the area search results fits this visit’s opening hours, travel and time window. Try a shorter visit or another area.",
+          );
+          continue;
+        }
+      }
       if (!place) {
         unavailable(
           item,
