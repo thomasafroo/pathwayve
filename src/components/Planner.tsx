@@ -277,22 +277,11 @@ function PlannerSession({
           <button
             type="button"
             className="secondary"
-            onClick={onClear}
-            title="Clear the current trip, chat, preferences and pending draft. Saved schedules are kept."
-          >
-            Clear everything
-          </button>
-          <button
-            type="button"
-            className="secondary"
             disabled={busy}
             onClick={() => setCalendarOpen(true)}
           >
             Calendar
           </button>
-          <span className="workspace-mode">
-            {mode === "demo" ? "Demo" : "Live"}
-          </span>
           {(trip || savedDocument) && !itineraryOpen && (
             <button
               className="secondary"
@@ -339,6 +328,14 @@ function PlannerSession({
       <main className="map-workspace-main">
         <aside className="directions-panel" aria-label="Trip planning panel">
           <div className="panel-content">
+            <button
+              type="button"
+              className="secondary clear-planning"
+              onClick={onClear}
+              title="Clear the current trip, chat, preferences and pending draft. Saved schedules are kept."
+            >
+              Clear everything
+            </button>
             <TripForm
               ref={tripForm}
               key={formVersion}

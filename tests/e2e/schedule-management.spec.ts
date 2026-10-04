@@ -1,4 +1,10 @@
 import { expect, test } from "@playwright/test";
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    sessionStorage.setItem("pathwayve.welcomed", "true"),
+  );
+});
 type SavedTrip = {
   request: { startTime: string; endTime: string; timeZone: string };
   stops: { id: string; name: string; durationMinutes: number }[];

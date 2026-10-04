@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    sessionStorage.setItem("pathwayve.welcomed", "true"),
+  );
+});
+
 test("guest save survives Google redirect, saves once, reopens and signs out", async ({
   page,
 }, testInfo) => {

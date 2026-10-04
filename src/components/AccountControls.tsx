@@ -35,6 +35,7 @@ export function AccountControls({
   const [saved, setSaved] = useState<Summary[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const loginDialog = useRef<HTMLDialogElement>(null);
+  const welcomeDialog = useRef<HTMLDialogElement>(null);
   const libraryDialog = useRef<HTMLDialogElement>(null);
   const pending = useRef<SaveRequest | null>(null);
   const restored = useRef(false);
@@ -45,6 +46,22 @@ export function AccountControls({
     latest.current = { snapshot, onOpen, onSignOut };
   });
   const canSave = !!(snapshot.document || snapshot.workspace);
+
+  useEffect(() => {
+    if (isPending || session) return;
+    try {
+      if (
+        sessionStorage.getItem("pathwayve.welcomed") ||
+        sessionStorage.getItem(pendingKey) ||
+        new URLSearchParams(window.location.search).has("auth")
+      )
+        return;
+      sessionStorage.setItem("pathwayve.welcomed", "true");
+    } catch {
+      /* The welcome screen still works without browser storage. */
+    }
+    welcomeDialog.current?.showModal();
+  }, [isPending, session]);
 
   async function save(payload: SaveRequest) {
     if (inFlight.current) return;
@@ -163,6 +180,7 @@ export function AccountControls({
     return payload;
   }
   function requestLogin(signUp = false) {
+    welcomeDialog.current?.close();
     setError("");
     setLoginReason(
       signUp ? "Create your PathWayve account" : "Log in to PathWayve",
@@ -302,14 +320,14 @@ export function AccountControls({
       ) : (
         <>
           <button
-            className="secondary"
+            className="secondary account-entry"
             disabled={busy || working || isPending}
             onClick={() => requestLogin()}
           >
             Log in
           </button>
           <button
-            className="primary"
+            className="primary account-entry"
             disabled={busy || working || isPending}
             onClick={() => requestLogin(true)}
           >
@@ -329,7 +347,7 @@ export function AccountControls({
       )}
       <dialog
         ref={loginDialog}
-        className="account-dialog"
+        className="account-dialog login-dialog"
         aria-labelledby="login-title"
       >
         <h2 id="login-title">{loginReason}</h2>
@@ -344,12 +362,72 @@ export function AccountControls({
           Continue with Google
         </button>
         <button
-          className="text-button"
+          className="secondary keep-planning"
           disabled={working}
           onClick={() => loginDialog.current?.close()}
         >
           Keep planning
         </button>
+      </dialog>
+      <dialog
+        ref={welcomeDialog}
+        className="welcome-dialog"
+        aria-labelledby="welcome-title"
+      >
+        <div className="welcome-layout">
+          <div className="welcome-brand" aria-label="PathWayve">
+            <svg
+              className="welcome-mark"
+              viewBox="15 10 205 210"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                className="welcome-trace"
+                pathLength="1"
+                d="M40 199V72C40 43 59 27 87 27H98C130 27 150 46 150 76C150 106 130 125 98 125H69L99 194L129 140L159 194"
+                stroke="currentColor"
+                strokeWidth="15"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                className="welcome-trace welcome-tip"
+                pathLength="1"
+                d="M159 194L197 125"
+                stroke="#829B55"
+                strokeWidth="15"
+                strokeLinecap="round"
+              />
+              <circle className="welcome-dot" r="8" fill="#829B55" />
+            </svg>
+            <span>PathWayve</span>
+          </div>
+          <div className="welcome-options">
+            <p className="welcome-eyebrow">
+              A little planning. A world of possibilities.
+            </p>
+            <h1 id="welcome-title">Where will your day take you?</h1>
+            <p>
+              Find your stops, make time for what matters, and enjoy the way
+              there.
+            </p>
+            <div className="welcome-auth-actions">
+              <button className="secondary" onClick={() => requestLogin()}>
+                Log in
+              </button>
+              <button className="primary" onClick={() => requestLogin(true)}>
+                Sign up
+              </button>
+            </div>
+            <button
+              className="secondary welcome-guest"
+              onClick={() => welcomeDialog.current?.close()}
+            >
+              Continue as guest
+            </button>
+          </div>
+        </div>
       </dialog>
       <dialog
         ref={libraryDialog}
