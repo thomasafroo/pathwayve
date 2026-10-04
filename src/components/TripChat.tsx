@@ -38,6 +38,7 @@ export function TripChat({
   const [planning, setPlanning] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [listening, setListening] = useState(false);
   // Clarification turns sent back to Gemini with the next prompt.
   const [conversation, setConversation] = useState<string[]>([]);
   const requestId = useRef<string | null>(null);
@@ -46,6 +47,9 @@ export function TripChat({
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
   const stopFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxRecordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const silenceFrame = useRef<number | null>(null);
+  const audioContext = useRef<AudioContext | null>(null);
   const unmounted = useRef(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -55,6 +59,9 @@ export function TripChat({
     return () => {
       unmounted.current = true;
       if (stopFallback.current) clearTimeout(stopFallback.current);
+      if (maxRecordingTimer.current) clearTimeout(maxRecordingTimer.current);
+      if (silenceFrame.current) cancelAnimationFrame(silenceFrame.current);
+      void audioContext.current?.close();
       if (recorder.current?.state !== "inactive") recorder.current?.stop();
       stream.current?.getTracks().forEach((track) => track.stop());
     };
@@ -193,6 +200,11 @@ export function TripChat({
   function stopRecording() {
     const currentRecorder = recorder.current;
     setRecording(false);
+    setListening(false);
+    if (maxRecordingTimer.current) clearTimeout(maxRecordingTimer.current);
+    if (silenceFrame.current) cancelAnimationFrame(silenceFrame.current);
+    void audioContext.current?.close();
+    audioContext.current = null;
     if (!currentRecorder || currentRecorder.state === "inactive") {
       stream.current?.getTracks().forEach((track) => track.stop());
       stream.current = null;
@@ -210,6 +222,36 @@ export function TripChat({
         chunks.current = [];
       }
     }, 1500);
+  }
+  function monitorSilence(nextStream: MediaStream) {
+    const AudioContextClass =
+      window.AudioContext ??
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass({ sampleRate: 16_000 });
+    audioContext.current = context;
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 1024;
+    context.createMediaStreamSource(nextStream).connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    let heardSpeech = false,
+      silentSince = 0;
+    const tick = () => {
+      analyser.getByteTimeDomainData(samples);
+      const volume =
+        samples.reduce((sum, sample) => sum + Math.abs(sample - 128), 0) /
+        samples.length;
+      if (volume > 7) {
+        heardSpeech = true;
+        silentSince = 0;
+      } else if (heardSpeech) silentSince ||= performance.now();
+
+      if (heardSpeech && silentSince && performance.now() - silentSince > 1400)
+        stopRecording();
+      else silenceFrame.current = requestAnimationFrame(tick);
+    };
+    silenceFrame.current = requestAnimationFrame(tick);
   }
   async function toggleRecording() {
     if (recording) {
@@ -247,7 +289,12 @@ export function TripChat({
       });
       nextRecorder.start();
       setRecording(true);
+      setListening(true);
+      monitorSilence(nextStream);
+      maxRecordingTimer.current = setTimeout(stopRecording, 20_000);
     } catch (err) {
+      setRecording(false);
+      setListening(false);
       setError(
         err instanceof DOMException && err.name === "NotAllowedError"
           ? "Allow microphone access to use voice input."
@@ -367,6 +414,11 @@ export function TripChat({
         ))}
         {planning && (
           <p className="chat-message assistant pending">Planning…</p>
+        )}
+        {listening && (
+          <p className="chat-message assistant pending">
+            Listening… pause or tap the mic to finish.
+          </p>
         )}
         {transcribing && (
           <p className="chat-message assistant pending">Transcribing…</p>
