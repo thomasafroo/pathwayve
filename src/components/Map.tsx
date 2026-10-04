@@ -11,6 +11,44 @@ import {
 import type { Location, TripState } from "@/types/trip";
 import { endpoints } from "@/lib/fixtures";
 import { Icon } from "./Icon";
+import { useLiveLocation, type LivePosition } from "@/lib/use-live-location";
+
+function PositionOverlay({
+  position,
+  follow,
+}: {
+  position: LivePosition;
+  follow: boolean;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const circle = new google.maps.Circle({
+      map,
+      center: position,
+      radius: position.accuracy,
+      fillColor: "#4285f4",
+      fillOpacity: 0.12,
+      strokeColor: "#4285f4",
+      strokeOpacity: 0.3,
+      strokeWeight: 1,
+      clickable: false,
+    });
+    return () => circle.setMap(null);
+  }, [map, position]);
+  useEffect(() => {
+    if (map && follow) map.panTo(position);
+  }, [map, position, follow]);
+  return (
+    <AdvancedMarker
+      position={position}
+      title="Your current location"
+      zIndex={1000}
+    >
+      <span className="current-location-dot" />
+    </AdvancedMarker>
+  );
+}
 
 type MapProps = {
   trip: TripState | null;
@@ -246,6 +284,8 @@ export function Map(props: MapProps) {
   const { trip, selectedId, onSelect, picking, onPick, onCancelPick } = props;
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const [fitCount, setFitCount] = useState(0);
+  const location = useLiveLocation();
+  const [follow, setFollow] = useState(true);
   const selected = trip?.stops.find((s) => s.id === selectedId);
   return (
     <section
@@ -268,7 +308,8 @@ export function Map(props: MapProps) {
             defaultCenter={endpoints[1].location}
             defaultZoom={12}
             mapId={process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID"}
-            gestureHandling="cooperative"
+            gestureHandling="greedy"
+            onDragstart={() => setFollow(false)}
             disableDefaultUI
             clickableIcons={false}
             zoomControl
@@ -312,6 +353,9 @@ export function Map(props: MapProps) {
               selectedId={selectedId}
               fitCount={fitCount}
             />
+            {location.position && (
+              <PositionOverlay position={location.position} follow={follow} />
+            )}
           </GoogleMap>
           <MapLoading />
         </APIProvider>
@@ -319,11 +363,57 @@ export function Map(props: MapProps) {
         <RouteSketch trip={trip} selectedId={selectedId} onSelect={onSelect} />
       )}
       {key && (
-        <button className="fit-map" onClick={() => setFitCount((n) => n + 1)}>
+        <button
+          className="fit-map"
+          onClick={() => {
+            setFollow(false);
+            setFitCount((n) => n + 1);
+          }}
+        >
           <Icon name="route" size={16} />
           Fit route
         </button>
       )}
+      <div className="location-controls">
+        {!location.tracking ? (
+          <button
+            className="location-button"
+            onClick={() => {
+              setFollow(true);
+              location.start();
+            }}
+          >
+            <Icon name="locate" size={19} />
+            Follow my location
+          </button>
+        ) : (
+          <>
+            <button
+              className="location-button"
+              aria-pressed={follow}
+              onClick={() => setFollow(!follow)}
+            >
+              <Icon name="locate" size={19} />
+              {follow ? "Following you" : "Recenter on me"}
+            </button>
+            <button className="location-stop" onClick={location.stop}>
+              Stop tracking
+            </button>
+          </>
+        )}
+        {location.tracking && (
+          <p className="location-readout" aria-live="polite">
+            {location.position
+              ? `Location accuracy: ±${Math.round(location.position.accuracy)} m${key ? "" : " · Map key needed to show your position"}`
+              : "Waiting for your location…"}
+          </p>
+        )}
+        {location.error && (
+          <p role="alert" className="location-error">
+            {location.error}
+          </p>
+        )}
+      </div>
       {picking && (
         <div className="map-pick-banner">
           Click the map to place your new stop.

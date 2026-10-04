@@ -154,3 +154,15 @@ favourites, itinerary editing, undo, downloads, and keyboard behavior.
 Provider contract mocks do not verify credentials, quotas, billing, or actual
 Google service availability. A configured server key is required for a live
 end-to-end Places/Routes check. Standard browser tests force sample provider mode.
+
+## Desktop map workspace and location
+
+The desktop layout uses a full-height map with a fixed-width, independently scrolling planning panel. Plan and itinerary tabs preserve the existing form and JSON workflow. Search, routing providers, and request schemas are unchanged by this layout update.
+
+The AI companion panel is a preview only. Users can draft and save a brief in the current component session; it is not sent to Gemini, persisted across reloads, added to exported trip JSON, or applied to a route.
+
+“Follow my location” starts browser `watchPosition` only after a click and requires browser permission plus HTTPS (localhost works for development). The map shows a blue marker and accuracy circle; dragging the map suspends recentering while updates continue. Users can recenter or stop tracking. Stop clears the watch and removes the position; unmount also clears it. Coordinates are kept in component memory and are not sent to the planner or stored in trip JSON. Viewing the location uses Google’s map and normal map tile requests. It does not reroute the trip.
+
+Browser location quality depends on the device; desktop locations can be approximate. Tracking while a page is suspended or closed is not supported. Background navigation would require a separate mobile/native implementation.
+
+Browser coverage includes panel switching, a saved assistant brief, opt-in location updates, stopping with a late callback, and permission denial. Location tests inject synthetic coordinates; they do not request the operator’s location.

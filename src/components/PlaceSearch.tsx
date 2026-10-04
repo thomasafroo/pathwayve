@@ -1,5 +1,5 @@
 "use client";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { z } from "zod";
 import {
   candidatePlaceSchema,
@@ -7,6 +7,7 @@ import {
   type Location,
 } from "@/types/trip";
 import { Icon } from "./Icon";
+import { predictionsSchema, type PlacePrediction } from "@/types/place-search";
 
 const resultsSchema = z.object({
   source: z.enum(["demo", "live"]),
@@ -41,6 +42,116 @@ export function PlaceSearch({
   const [busy, setBusy] = useState(false);
   const [sort, setSort] = useState("match");
   const revision = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  const session = useRef<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const [predictionSource, setPredictionSource] = useState("");
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const listId = `${inputId}-suggestions`;
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+      controller.current?.abort();
+      revision.current++;
+    },
+    [],
+  );
+  useEffect(() => {
+    if (open && active >= 0)
+      document
+        .getElementById(`${listId}-${active}`)
+        ?.scrollIntoView({ block: "nearest" });
+  }, [active, listId, open]);
+  function cancelPending() {
+    if (timer.current) clearTimeout(timer.current);
+    controller.current?.abort();
+    revision.current++;
+  }
+  async function post(url: string, body: unknown) {
+    controller.current = new AbortController();
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.current.signal,
+    });
+    const json = await response.json();
+    if (!response.ok)
+      throw new Error(json.error?.message ?? "Place search failed.");
+    return json;
+  }
+  async function suggest(text: string, token: number) {
+    session.current ??= crypto.randomUUID();
+    try {
+      const data = predictionsSchema.parse(
+        await post("/api/autocomplete", {
+          query: text,
+          near,
+          sessionToken: session.current,
+        }),
+      );
+      if (revision.current !== token) return;
+      setSuggestions(data.suggestions);
+      setPredictionSource(data.source);
+      setOpen(true);
+    } catch (e) {
+      if (revision.current === token)
+        setError(e instanceof Error ? e.message : "Suggestions unavailable.");
+    } finally {
+      if (revision.current === token) setLoadingSuggestions(false);
+    }
+  }
+  function changeQuery(text: string) {
+    cancelPending();
+    setQuery(text);
+    setResults([]);
+    setSuggestions([]);
+    setActive(-1);
+    setError("");
+    setBusy(false);
+    setOpen(text.trim().length >= 2);
+    setLoadingSuggestions(text.trim().length >= 2);
+    if (text.trim().length >= 2) {
+      const token = revision.current;
+      timer.current = setTimeout(() => void suggest(text, token), 300);
+    } else session.current = null;
+  }
+  async function selectPrediction(prediction: PlacePrediction) {
+    cancelPending();
+    const token = revision.current;
+    const sessionToken = session.current ?? crypto.randomUUID();
+    session.current = null;
+    setOpen(false);
+    setLoadingSuggestions(false);
+    setBusy(true);
+    setError("");
+    try {
+      const data = z
+        .object({ place: candidatePlaceSchema })
+        .parse(
+          await post("/api/place-details", {
+            placeId: prediction.placeId,
+            sessionToken,
+            category,
+          }),
+        );
+      if (revision.current !== token) return;
+      setSuggestions([]);
+      setResults([]);
+      setQuery("");
+      setBusy(false);
+      onSelect(data.place);
+    } catch (e) {
+      if (revision.current === token)
+        setError(e instanceof Error ? e.message : "Could not load this place.");
+    } finally {
+      if (revision.current === token) setBusy(false);
+    }
+  }
   const km = (p: CandidatePlace) =>
     near
       ? Math.hypot(
@@ -65,19 +176,17 @@ export function PlaceSearch({
   );
   async function search() {
     if (query.trim().length < 2) return;
-    const token = ++revision.current;
+    cancelPending();
+    const token = revision.current;
+    session.current = null;
+    setOpen(false);
+    setSuggestions([]);
+    setLoadingSuggestions(false);
     setBusy(true);
     setError("");
     setResults([]);
     try {
-      const response = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, near, budget, category }),
-      });
-      const json = await response.json();
-      if (!response.ok)
-        throw new Error(json.error?.message ?? "Place search failed.");
+      const json = await post("/api/search", { query, near, budget, category });
       const data = resultsSchema.parse(json);
       if (token !== revision.current) return;
       setResults(data.places);
@@ -96,37 +205,152 @@ export function PlaceSearch({
     }
   }
   return (
-    <section className="place-search" aria-label={label}>
+    <section
+      className="place-search"
+      aria-label={label}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          if (loadingSuggestions || open) {
+            cancelPending();
+            setLoadingSuggestions(false);
+          }
+          setOpen(false);
+          setActive(-1);
+        }
+      }}
+    >
       <label htmlFor={inputId}>{label}</label>
-      <div className="search-input-row">
-        <input
-          id={inputId}
-          value={query}
-          disabled={disabled}
-          placeholder="Search any place, address, or city"
-          onChange={(e) => {
-            setQuery(e.target.value);
-            revision.current++;
-            setResults([]);
-            setError("");
-            setBusy(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void search();
+      <div className="autocomplete-field">
+        <div className="search-input-row autocomplete-input-row">
+          <Icon name="search" size={18} />
+          <input
+            ref={inputRef}
+            id={inputId}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={open}
+            aria-controls={open ? listId : undefined}
+            aria-activedescendant={
+              open && active >= 0 && suggestions[active]
+                ? `${listId}-${active}`
+                : undefined
             }
-          }}
-        />
-        <button
-          type="button"
-          className="secondary"
-          disabled={disabled || busy || query.trim().length < 2}
-          onClick={() => void search()}
-        >
-          {busy ? "Searching…" : "Search"}
-        </button>
+            autoComplete="off"
+            maxLength={200}
+            value={query}
+            disabled={disabled}
+            placeholder="Search a place or address"
+            onChange={(e) => changeQuery(e.target.value)}
+            onFocus={() => {
+              if (suggestions.length) setOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                if (!suggestions.length) return;
+                e.preventDefault();
+                setOpen(true);
+                setActive((index) =>
+                  e.key === "ArrowDown"
+                    ? (index + 1) % suggestions.length
+                    : index <= 0
+                      ? suggestions.length - 1
+                      : index - 1,
+                );
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (busy) return;
+                if (open && suggestions.length)
+                  void selectPrediction(suggestions[Math.max(0, active)]);
+                else void search();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                cancelPending();
+                setOpen(false);
+                setActive(-1);
+                setLoadingSuggestions(false);
+                setBusy(false);
+              }
+            }}
+          />
+          {query && (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={`Clear ${label}`}
+              disabled={disabled}
+              onClick={() => {
+                changeQuery("");
+                inputRef.current?.focus();
+              }}
+            >
+              <Icon name="close" size={15} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="icon-button search-submit"
+            aria-label="Search"
+            title="Search all results"
+            disabled={disabled || busy || query.trim().length < 2}
+            onClick={() => void search()}
+          >
+            <Icon name="arrow" size={17} />
+          </button>
+        </div>
+        {open && (
+          <div className="autocomplete-dropdown">
+            <ul id={listId} role="listbox" aria-label={`${label} suggestions`}>
+              {suggestions.map((p, index) => (
+                <li
+                  key={p.placeId}
+                  id={`${listId}-${index}`}
+                  role="option"
+                  aria-selected={active === index}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setActive(index)}
+                  onClick={() => {
+                    if (!disabled) void selectPrediction(p);
+                  }}
+                >
+                  <span className="prediction-icon">
+                    <Icon name="pin" size={18} />
+                  </span>
+                  <span>
+                    <strong>{p.name}</strong>
+                    <small>{p.address}</small>
+                  </span>
+                  <Icon name="arrow" size={14} />
+                </li>
+              ))}
+            </ul>
+            {loadingSuggestions ? (
+              <p className="autocomplete-message">Finding places…</p>
+            ) : !suggestions.length && !error ? (
+              <p className="autocomplete-message">
+                No suggestions. Try a name with a city, or press Enter to search
+                all results.
+              </p>
+            ) : null}
+            {suggestions.length > 0 && (
+              <div className="autocomplete-attribution">
+                {predictionSource === "live" ? "Google Maps" : "Sample places"}
+                <span>↑ ↓ to browse · Enter to select</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+      <span className="search-announcement" aria-live="polite">
+        {busy
+          ? "Loading place…"
+          : loadingSuggestions
+            ? "Finding suggestions…"
+            : open
+              ? `${suggestions.length} suggestions available`
+              : ""}
+      </span>
       {error && (
         <p className="search-error" role="alert">
           {error}
@@ -160,6 +384,9 @@ export function PlaceSearch({
                 <button
                   type="button"
                   onClick={() => {
+                    cancelPending();
+                    setOpen(false);
+                    setSuggestions([]);
                     onSelect(p);
                     setResults([]);
                     setQuery("");

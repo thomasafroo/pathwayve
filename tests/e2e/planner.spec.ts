@@ -40,6 +40,8 @@ test("shows server validation errors without replacing a previous plan", async (
   await page.getByRole("button", { name: "Load sample trip" }).click();
   await page.getByRole("button", { name: "Plan my day" }).click();
   await expect(page.locator(".stop")).toHaveCount(4);
+  await page.getByRole("tab", { name: "Plan a trip" }).click();
+  await page.locator(".schedule-options > summary").click();
   await page.getByLabel("Departure", { exact: true }).fill("2030-10-03T13:00");
   await page.getByLabel("Finish by", { exact: true }).fill("2030-10-03T12:00");
   await page.getByRole("button", { name: "Plan my day" }).click();
@@ -193,7 +195,7 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
   });
   await page.goto("/");
   await page
-    .getByRole("textbox", { name: "Search starting point", exact: true })
+    .getByRole("combobox", { name: "Search starting point", exact: true })
     .fill("Origin address");
   await page
     .getByRole("region", { name: "Search starting point", exact: true })
@@ -201,7 +203,7 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
     .click();
   await page.getByRole("button", { name: /Library entrance/ }).click();
   await page
-    .getByRole("textbox", { name: "Search destination", exact: true })
+    .getByRole("combobox", { name: "Search destination", exact: true })
     .fill("Destination address");
   await page
     .getByRole("region", { name: "Search destination", exact: true })
@@ -210,7 +212,7 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
   await page.getByRole("button", { name: /Community Centre/ }).click();
   await page.getByRole("button", { name: "Find a place to visit" }).click();
   await page
-    .getByRole("textbox", { name: "Search optional stops", exact: true })
+    .getByRole("combobox", { name: "Search optional stops", exact: true })
     .fill("cafes");
   await page
     .getByRole("region", { name: "Search optional stops", exact: true })
@@ -246,4 +248,270 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
   );
   await expect(page.locator(".stop")).toHaveCount(1);
   await expect(page.locator(".stop")).toContainText("Sunset Cafe");
+});
+
+test("desktop map stays visible and the assistant preserves a local brief", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  const map = page.getByRole("region", { name: "Trip map", exact: true });
+  const bounds = await map.boundingBox();
+  expect(bounds!.height).toBe(page.viewportSize()!.height);
+  expect(bounds!.width).toBeGreaterThan(700);
+  await page.screenshot({ path: testInfo.outputPath("desktop-workspace.png") });
+  await page.getByRole("button", { name: "Open AI companion" }).click();
+  await expect(page.getByText("AI preview · Not connected")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Find a quiet café along my route" })
+    .click();
+  await page
+    .getByRole("button", { name: "Save brief for this session" })
+    .click();
+  await expect(
+    page.getByText("Saved: Find a quiet café along my route"),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("desktop-assistant.png") });
+  await page.getByRole("button", { name: "Close AI companion" }).click();
+  await page.getByRole("button", { name: "Open AI companion" }).click();
+  await expect(page.getByLabel("Your trip brief")).toHaveValue(
+    "Find a quiet café along my route",
+  );
+});
+
+test("location tracking is opt-in, receives movement, and stops listening", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    let success: PositionCallback;
+    Object.defineProperty(navigator, "geolocation", {
+      value: {
+        watchPosition(callback: PositionCallback) {
+          success = callback;
+          document.documentElement.dataset.locationWatch = "started";
+          return 42;
+        },
+        clearWatch(id: number) {
+          document.documentElement.dataset.clearedWatch = String(id);
+        },
+      },
+    });
+    window.addEventListener("test-position", (event) => {
+      const detail = (event as CustomEvent).detail;
+      success?.({
+        coords: detail,
+        timestamp: Date.now(),
+      } as GeolocationPosition);
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("html")).not.toHaveAttribute(
+    "data-location-watch",
+    "started",
+  );
+  await page.getByRole("button", { name: "Follow my location" }).click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-location-watch",
+    "started",
+  );
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("test-position", {
+        detail: { latitude: 49.28, longitude: -123.1, accuracy: 18 },
+      }),
+    ),
+  );
+  await expect(page.locator(".location-readout")).toContainText("±18 m");
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("test-position", {
+        detail: { latitude: 49.29, longitude: -123.12, accuracy: 9 },
+      }),
+    ),
+  );
+  await expect(page.locator(".location-readout")).toContainText("±9 m");
+  await page.getByRole("button", { name: "Stop tracking" }).click();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-cleared-watch",
+    "42",
+  );
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("test-position", {
+        detail: { latitude: 49.3, longitude: -123.13, accuracy: 5 },
+      }),
+    ),
+  );
+  await expect(page.locator(".location-readout")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Follow my location" }),
+  ).toBeVisible();
+});
+
+test("denied location permission leaves the trip planner usable", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "geolocation", {
+      value: {
+        watchPosition(
+          _success: PositionCallback,
+          failure: PositionErrorCallback,
+        ) {
+          setTimeout(
+            () => failure({ code: 1 } as GeolocationPositionError),
+            10,
+          );
+          return 3;
+        },
+        clearWatch() {},
+      },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Follow my location" }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Location permission was denied",
+  );
+  await expect(page.getByRole("button", { name: "Stop tracking" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  await page.getByRole("button", { name: "Plan my day" }).click();
+  await expect(page.locator(".stop")).toHaveCount(4);
+});
+
+test("typing suggests places, keyboard selection resolves coordinates, and sessions reset", async ({
+  page,
+}, testInfo) => {
+  const requests: { query: string; sessionToken: string }[] = [];
+  const details: { placeId: string; sessionToken: string }[] = [];
+  await page.route("**/api/autocomplete", async (route) => {
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({
+      json: {
+        source: "live",
+        suggestions: [
+          {
+            placeId: "library",
+            name: "Vancouver Public Library",
+            address: "350 W Georgia Street, Vancouver",
+          },
+          {
+            placeId: "museum",
+            name: "Vancouver Museum",
+            address: "Vanier Park, Vancouver",
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/place-details", async (route) => {
+    details.push(route.request().postDataJSON());
+    await route.fulfill({
+      json: {
+        place: {
+          id: "museum",
+          name: "Vancouver Museum",
+          category: "attraction",
+          location: { lat: 49.276, lng: -123.145 },
+        },
+      },
+    });
+  });
+  await page.goto("/");
+  const input = page.getByRole("combobox", {
+    name: "Search starting point",
+    exact: true,
+  });
+  await input.fill("Vanc");
+  await expect(
+    page.getByRole("option", { name: /Vancouver Public Library/ }),
+  ).toBeVisible();
+  expect(requests).toHaveLength(1);
+  await input.fill("Vancouver");
+  await expect(
+    page.getByRole("option", { name: /Vancouver Public Library/ }),
+  ).toBeVisible();
+  expect(requests).toHaveLength(2);
+  expect(requests[0].sessionToken).toBe(requests[1].sessionToken);
+  await page.screenshot({ path: testInfo.outputPath("autocomplete.png") });
+  await input.press("ArrowDown");
+  await input.press("ArrowDown");
+  await expect(
+    page.getByRole("option", { name: /Vancouver Museum/ }),
+  ).toHaveAttribute("aria-selected", "true");
+  await input.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "Vancouver Museum Change" }),
+  ).toBeVisible();
+  expect(details[0]).toMatchObject({
+    placeId: "museum",
+    sessionToken: requests[0].sessionToken,
+  });
+  await expect(page.locator(".stop")).toHaveCount(0); // Enter selected a place; it did not submit the trip.
+  const destination = page.getByRole("combobox", {
+    name: "Search destination",
+    exact: true,
+  });
+  await destination.fill("Vancouver");
+  await expect(
+    page.getByRole("option", { name: /Vancouver Museum/ }),
+  ).toBeVisible();
+  expect(requests.at(-1)!.sessionToken).not.toBe(requests[0].sessionToken);
+  await destination.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(destination).toHaveValue("Vancouver");
+  await page
+    .getByRole("button", { name: "Clear Search destination", exact: true })
+    .click();
+  await expect(destination).toHaveValue("");
+});
+
+test("late suggestions cannot replace a newer query or reopen after dismissal", async ({
+  page,
+}) => {
+  let releaseOld: () => void = () => {};
+  const oldResponse = new Promise<void>((resolve) => {
+    releaseOld = resolve;
+  });
+  await page.route("**/api/autocomplete", async (route) => {
+    const query = route.request().postDataJSON().query;
+    if (query === "old") await oldResponse;
+    await route
+      .fulfill({
+        json: {
+          source: "live",
+          suggestions: [
+            { placeId: query, name: `${query} place`, address: "Vancouver" },
+          ],
+        },
+      })
+      .catch(() => {});
+  });
+  await page.goto("/");
+  const input = page.getByRole("combobox", {
+    name: "Search starting point",
+    exact: true,
+  });
+  const firstRequest = page.waitForRequest((r) =>
+    r.url().endsWith("/api/autocomplete"),
+  );
+  await input.fill("old");
+  await firstRequest;
+  await input.fill("new");
+  await expect(
+    page.getByRole("option", { name: "new place Vancouver" }),
+  ).toBeVisible();
+  releaseOld();
+  await expect(
+    page.getByRole("option", { name: "old place Vancouver" }),
+  ).toHaveCount(0);
+  await input.press("Escape");
+  await expect(input).toHaveAttribute("aria-expanded", "false");
+  await input.fill("latest");
+  await expect(
+    page.getByRole("option", { name: "latest place Vancouver" }),
+  ).toBeVisible();
+  await page.getByRole("heading", { name: "Make a day of it." }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
 });
