@@ -7,6 +7,24 @@ import { searchPlaces } from "@/lib/place-search";
 import { POST as editTrip } from "@/app/api/trip-edit/route";
 import { createWorkspace } from "@/lib/trip-workspace";
 
+function localParts(time: string, timeZone: string) {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(time))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+}
+
 beforeEach(() => {
   vi.stubEnv("DATA_MODE", "demo");
   vi.stubEnv("MAPS_DATA_MODE", "demo");
@@ -31,13 +49,20 @@ describe("time windows and explicit user choices", () => {
   });
   it("handles DST, explicit multi-day ranges, and invalid timezones", () => {
     const base = exampleRequest();
-    expect(
-      tripRequestSchema.parse({
-        ...base,
-        startTime: "2026-11-01T07:30:00Z",
-        endTime: undefined,
-      }).endTime,
-    ).toBe("2026-11-02T07:59:59.999Z");
+    const dstEnd = tripRequestSchema.parse({
+      ...base,
+      timeZone: "America/Vancouver",
+      startTime: "2026-11-01T07:30:00Z",
+      endTime: undefined,
+    }).endTime;
+    expect(localParts(dstEnd, "America/Vancouver")).toMatchObject({
+      year: "2026",
+      month: "11",
+      day: "01",
+      hour: "23",
+      minute: "59",
+      second: "59",
+    });
     expect(
       tripRequestSchema.parse({
         ...base,
