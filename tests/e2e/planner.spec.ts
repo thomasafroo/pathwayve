@@ -644,3 +644,121 @@ test("drag, arrows and optimization automatically update without Gemini", async 
   ).toBeVisible();
   expect(geminiCalls).toBe(0);
 });
+
+test("preference typing waits for Apply preferences before routing", async ({
+  page,
+}) => {
+  await gotoHydrated(page);
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  await expect(page.locator(".stop")).toHaveCount(4, { timeout: 20000 });
+  let updates = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/plan") && request.method() === "POST")
+      updates++;
+  });
+  await page.getByText("Preferences & suggestions", { exact: true }).click();
+  await page
+    .getByLabel("Anything else?")
+    .fill("Quiet vegetarian breakfast, avoid crowds");
+  // Longer than the route debounce: typing must leave the route and editor alone.
+  await page.waitForTimeout(1200);
+  expect(updates).toBe(0);
+  await expect(page.getByLabel("Anything else?")).toBeEnabled();
+  const applied = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/api/plan") && request.method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Apply preferences", exact: true })
+    .click();
+  expect((await applied).postDataJSON().preferences).toBe(
+    "Quiet vegetarian breakfast, avoid crowds",
+  );
+  await expect(
+    page.getByRole("button", { name: "Apply preferences", exact: true }),
+  ).toBeDisabled();
+});
+
+test("AI workspace has one transit timeline and Clear everything resets the session", async ({
+  page,
+}) => {
+  await gotoHydrated(page);
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
+  const planned = page.waitForResponse(
+    (response) => response.url().endsWith("/api/plan") && response.ok(),
+  );
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  const trip = await (await planned).json();
+  await expect(page.locator(".stop")).toHaveCount(4, { timeout: 20000 });
+  const workspace = { trip, version: 0, activities: [] };
+  const document = {
+    schema_version: 1,
+    schedules: [
+      {
+        id: trip.id,
+        name: "AI trip",
+        starts_at: trip.request.startTime,
+        ends_at: trip.request.endTime,
+        time_zone: trip.request.timeZone,
+      },
+    ],
+    schedule_items: trip.stops.map(
+      (stop: { id: string; name: string; durationMinutes: number }) => ({
+        id: stop.id,
+        title: stop.name,
+        duration_minutes: stop.durationMinutes,
+        kind: "visit",
+        priority: "required",
+        timing_type: "flexible",
+      }),
+    ),
+    schedule_runs: [
+      {
+        status: "feasible",
+        calculated_at: trip.lastUpdated,
+        result: {
+          map_trip: trip,
+          placements: trip.stops.map(
+            (stop: { id: string; arrivalTime: string }) => ({
+              item_id: stop.id,
+              place_id: stop.id,
+              starts_at: stop.arrivalTime,
+              ends_at: stop.arrivalTime,
+            }),
+          ),
+          unscheduled_items: [],
+          travel_legs: [],
+          warnings: [],
+        },
+      },
+    ],
+  };
+  await page.route("**/api/schedules/preview", (route) =>
+    route.fulfill({ json: { document, workspace } }),
+  );
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  await page.getByLabel("Chat message").fill("Plan this trip");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(
+    page.getByText("Schedule details & export", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".stop")).toHaveCount(4);
+  await expect(page.locator(".saved-items li")).toHaveCount(0);
+  await expect(
+    page.getByRole("complementary", { name: "Itinerary panel" }),
+  ).toContainText("on transit");
+  await page
+    .getByRole("button", { name: "Clear everything", exact: true })
+    .click();
+  await expect(page.locator(".stop")).toHaveCount(0);
+  await expect(page.locator(".chosen-stops > div")).toHaveCount(0);
+  await expect(
+    page.getByRole("complementary", { name: "Itinerary panel" }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Departure", { exact: true })).toHaveValue("");
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  await expect(page.getByRole("log")).not.toContainText("Plan this trip");
+});

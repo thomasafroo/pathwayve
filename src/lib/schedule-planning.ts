@@ -1,4 +1,5 @@
 import "server-only";
+import { scopedPlaceQuery } from "./place-scope";
 import { visitWindow } from "./opening-hours";
 import { refreshPlaceHours } from "./place-hours";
 import { randomUUID } from "node:crypto";
@@ -126,13 +127,21 @@ export async function materializeSchedule(
   // Sidebar provider IDs/coordinates are authoritative: never search their names again.
   for (const [index, item] of items.entries()) {
     const model = draft.schedule_items[index];
+    const geographicQuery = item.place_query
+      ? scopedPlaceQuery(item.title, item.place_query)
+      : null;
+    if (geographicQuery) item.place_query = geographicQuery;
     const chosen = constraints?.selectedStops.find(
       (stop) => stop.id === model.selected_stop_id,
     );
     if (chosen) {
       item.place_id = chosen.id;
       places.set(item.id, await refreshPlaceHours(chosen));
-    } else if (item.place_query && model.location_scope === "along_route") {
+    } else if (
+      item.place_query &&
+      model.location_scope === "along_route" &&
+      !geographicQuery
+    ) {
       genericIds.add(item.id);
     } else if (item.place_query) {
       const place = await find(item.place_query, undefined, true);
@@ -325,17 +334,6 @@ export async function materializeSchedule(
   };
   try {
     for (const item of ordered) {
-      if (
-        item.order_locked &&
-        item.preferred_sequence !== result.placements.length
-      ) {
-        unavailable(
-          item,
-          "ORDER_LOCK_CONFLICT",
-          "The locked position cannot be preserved because an earlier activity could not be placed.",
-        );
-        continue;
-      }
       const place = places.get(item.id);
       if (!place) {
         unavailable(
@@ -551,7 +549,7 @@ export async function materializeSchedule(
   // Timed appointments/standalone tasks use the saved schedule view, whose constraints
   // cannot be represented faithfully by the older editable TripState contract.
   const canUseWorkspace =
-    status === "feasible" &&
+    !failed &&
     items.every(
       (item) => item.kind === "visit" && item.timing_type === "flexible",
     );

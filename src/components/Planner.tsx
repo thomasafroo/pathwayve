@@ -9,7 +9,7 @@ import {
   receiveReplan,
   validateWorkspace,
 } from "@/lib/trip-workspace";
-import { tripClient } from "@/lib/trip-client";
+import { clearPlanCache, tripClient } from "@/lib/trip-client";
 import { TripForm, type TripFormHandle } from "./TripForm";
 import { Map } from "./Map";
 import { Itinerary } from "./Itinerary";
@@ -28,6 +28,26 @@ import { CalendarDialog } from "./CalendarDialog";
 import { savedScheduleCalendar, workspaceCalendar } from "@/lib/calendar";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
+  const [session, setSession] = useState(0);
+  return (
+    <PlannerSession
+      key={session}
+      mode={mode}
+      onClear={() => {
+        clearPlanCache();
+        setSession((value) => value + 1);
+      }}
+    />
+  );
+}
+
+function PlannerSession({
+  mode,
+  onClear,
+}: {
+  mode: "demo" | "live";
+  onClear: () => void;
+}) {
   const [documentSaved, setDocumentSaved] = useState(false);
   const tripForm = useRef<TripFormHandle>(null);
   const [formVersion, setFormVersion] = useState(0);
@@ -246,6 +266,15 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             type="button"
             className="secondary"
             disabled={busy}
+            onClick={onClear}
+            title="Clear the current route, stops, chat and navigation. Saved schedules and preferences are kept."
+          >
+            Clear everything
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
             onClick={() => setCalendarOpen(true)}
           >
             Calendar
@@ -306,9 +335,42 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               busy={busy}
               onPlan={onPlan}
               mode={mode}
-              currentTrip={trip}
+              currentTrip={mapTrip}
               pendingPlace={pendingPlace}
             />
+            {savedDocument &&
+              savedDocument.schedule_runs[0].result.unscheduled_items.length >
+                0 && (
+                <section
+                  aria-label="Unscheduled activities"
+                  className="preference-details"
+                >
+                  <h3>Still needs planning</h3>
+                  <p>
+                    These requests are not included in the mapped route yet.
+                  </p>
+                  {savedDocument.schedule_runs[0].result.unscheduled_items.map(
+                    (missing) => (
+                      <div key={missing.item_id}>
+                        <strong>
+                          {
+                            savedDocument.schedule_items.find(
+                              (item) => item.id === missing.item_id,
+                            )?.title
+                          }
+                        </strong>
+                        <p>{missing.reason}</p>
+                      </div>
+                    ),
+                  )}
+                </section>
+              )}
+            {!state && mapTrip && (
+              <p>
+                Showing the schedule’s places. Editing creates a route copy; use
+                chat to preserve appointment and task constraints.
+              </p>
+            )}
           </div>
           <div className="plan-submit">
             <p aria-live="polite">
@@ -500,22 +562,28 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             </header>
             <div className="itinerary-scroll">
               {savedDocument && (
-                <SavedSchedule
-                  document={savedDocument}
-                  persisted={documentSaved}
-                  onImport={importSchedule}
-                  onDelete={() => void deleteCurrent()}
-                  busy={busy}
-                  showRoute={false}
-                  onClose={() => setSavedDocument(null)}
-                />
+                <details className="itinerary-extras">
+                  <summary>Schedule details & export</summary>
+                  <SavedSchedule
+                    document={savedDocument}
+                    persisted={documentSaved}
+                    onImport={importSchedule}
+                    onDelete={() => void deleteCurrent()}
+                    busy={busy}
+                    showRoute={false}
+                    onClose={() => setSavedDocument(null)}
+                  />
+                </details>
               )}
               <div className="schedule-status">
                 <Icon name="check" size={16} />
                 <span>
-                  {spare > 0
-                    ? `Fits your schedule · ${spare} min remaining`
-                    : "No time remaining"}
+                  {savedDocument &&
+                  savedDocument.schedule_runs[0].status !== "feasible"
+                    ? "Some activities still need planning — review unresolved requests on the left."
+                    : spare > 0
+                      ? `Fits your schedule · ${spare} min remaining`
+                      : "No time remaining"}
                 </span>
               </div>
               <p role="status" className="change-message" aria-live="polite">

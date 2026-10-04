@@ -426,3 +426,122 @@ it("does not rediscover a rejected venue in generic route-corridor searches", as
     result.document.schedule_runs[0].result.map_trip?.stops ?? [],
   ).toHaveLength(0);
 });
+
+it.each(["transit", "driving"] as const)(
+  "inserts first breakfast before later locked visits for %s",
+  async (transportation) => {
+    const breakfast = place("Breakfast", 49.285, -123.145);
+    const theater = place("Theater", 49.29, -123.14);
+    const grocery = place("No Frills", 49.295, -123.13);
+    vi.mocked(searchPlaces).mockImplementation(async ({ query }) => ({
+      source: "live",
+      places:
+        query === "Theater"
+          ? [theater]
+          : query === "No Frills"
+            ? [grocery]
+            : [breakfast],
+    }));
+    const input = constraints();
+    input.selectedStops = [];
+    input.transportation = transportation;
+    input.endTime = "2030-10-04T22:00:00-07:00";
+    const draft = scheduleIntent();
+    const template = draft.schedule_items[0];
+    draft.schedule_items = ["Breakfast", "Theater", "No Frills"].map(
+      (name, index) => ({
+        ...template,
+        title: name,
+        place_query: name,
+        location_scope: index === 0 ? "along_route" : "specific",
+        preferred_sequence: index,
+        order_locked: true,
+        priority: "required",
+        duration_minutes: 90,
+      }),
+    );
+    const { document, workspace } = await materializeSchedule(
+      draft,
+      owner,
+      input,
+    );
+    expect(document.schedule_runs[0].status).toBe("feasible");
+    expect(document.schedule_runs[0].result.unscheduled_items).toEqual([]);
+    expect(workspace?.trip.stops.map((stop) => stop.name)).toEqual([
+      "Breakfast",
+      "Theater",
+      "No Frills",
+    ]);
+    expect(document.schedule_runs[0].result.map_trip).toEqual(workspace?.trip);
+  },
+);
+
+it("does not accumulate echoed preferences over repeated planning updates", () => {
+  const input = constraints();
+  input.preferences = Array(5).fill("I don't like purebread bakery").join("\n");
+  let draft = scheduleIntent();
+  draft.schedules[0].preferences.notes =
+    "I don't like purebread bakery\nVegetarian food";
+  for (let iteration = 0; iteration < 5; iteration++) {
+    draft = enforceScheduleConstraints(draft, input);
+    input.preferences = draft.schedules[0].preferences.notes;
+  }
+  expect(draft.schedules[0].preferences.notes).toBe(
+    "I don't like purebread bakery\nVegetarian food",
+  );
+});
+
+it.each(["transit", "driving"] as const)(
+  "uses downtown and near-UBC qualifiers outside the corridor for %s",
+  async (transportation) => {
+    const theater = place("Downtown theater", 49.5, -123.5);
+    const grocery = place("Grocery near UBC", 49.55, -123.55);
+    vi.mocked(searchPlaces).mockImplementation(async ({ query }) => ({
+      source: "live",
+      places: query.includes("downtown")
+        ? [theater]
+        : query.includes("UBC")
+          ? [grocery]
+          : [],
+    }));
+    const input = constraints();
+    input.selectedStops = [];
+    input.transportation = transportation;
+    const draft = scheduleIntent();
+    const template = draft.schedule_items[0];
+    draft.schedule_items = [
+      {
+        ...template,
+        title: "Movie Theater in Downtown",
+        place_query: "movie theater in downtown",
+        location_scope: "along_route",
+        preferred_sequence: 0,
+        order_locked: true,
+      },
+      {
+        ...template,
+        title: "No Frills near UBC",
+        place_query: "No Frills",
+        location_scope: "along_route",
+        preferred_sequence: 1,
+        order_locked: true,
+      },
+    ];
+    const { workspace, document } = await materializeSchedule(
+      draft,
+      owner,
+      input,
+    );
+    expect(workspace?.trip.stops.map((stop) => stop.id)).toEqual([
+      theater.id,
+      grocery.id,
+    ]);
+    expect(document.schedule_items[1].place_query).toBe("No Frills near UBC");
+    expect(searchPlaces).toHaveBeenCalledTimes(2);
+    expect(
+      vi
+        .mocked(searchPlaces)
+        .mock.calls.every(([request]) => request.radiusMeters === undefined),
+    ).toBe(true);
+  },
+);

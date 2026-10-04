@@ -1,4 +1,6 @@
 "use client";
+
+import { mergePreferenceNotes } from "@/lib/preference-notes";
 import { z } from "zod";
 import {
   useEffect,
@@ -76,6 +78,7 @@ export function TripForm({
   onPlan: (request: TripRequest) => Promise<void>;
 }) {
   const [revision, setRevision] = useState(0);
+  const [preferencesDirty, setPreferencesDirty] = useState(false);
   const attemptedRevision = useRef(0);
   const draggedId = useRef<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -116,7 +119,9 @@ export function TripForm({
   const [interests, setInterests] = useState<string[]>(
     currentTrip?.request.interestTags ?? [],
   );
-  const [notes, setNotes] = useState(currentTrip?.request.preferences ?? "");
+  const [notes, setNotes] = useState(
+    mergePreferenceNotes(currentTrip?.request.preferences),
+  );
   const [routingPriority, setRoutingPriority] = useState<string>(
     currentTrip?.request.routingPriority ?? "fastest",
   );
@@ -157,7 +162,7 @@ export function TripForm({
           setActivities(p.activities);
           setInterests(p.interests);
           setBudget(p.budget);
-          setNotes(p.notes);
+          setNotes(mergePreferenceNotes(p.notes));
           setRoutingPriority(p.routingPriority);
           setRadius(p.radius);
           setTransportation(p.transportation);
@@ -233,7 +238,7 @@ export function TripForm({
       setActivities(currentTrip.request.activities);
       setInterests(currentTrip.request.interestTags ?? []);
       setBudget(currentTrip.request.budget ?? "any");
-      setNotes(currentTrip.request.preferences);
+      setNotes(mergePreferenceNotes(currentTrip.request.preferences));
       setRoutingPriority(currentTrip.request.routingPriority ?? "fastest");
       setOrderPolicy(currentTrip.request.orderPolicy ?? "preserve");
       setEditing(null);
@@ -260,7 +265,7 @@ export function TripForm({
       setActivities(request.activities);
       setInterests(request.interestTags ?? []);
       setBudget(request.budget ?? "any");
-      setNotes(request.preferences);
+      setNotes(mergePreferenceNotes(request.preferences));
       setOrderPolicy(request.orderPolicy ?? "preserve");
       setRoutingPriority(request.routingPriority ?? "fastest");
       setSuggestionMode(request.suggestionMode ?? "manual");
@@ -480,6 +485,13 @@ export function TripForm({
       onSubmit={submit}
       onChange={(event) => {
         const element = event.target;
+        if (
+          element instanceof HTMLElement &&
+          element.closest(".trip-preferences")
+        ) {
+          setPreferencesDirty(true);
+          return;
+        }
         if (!(
           element instanceof HTMLInputElement ||
           element instanceof HTMLSelectElement ||
@@ -959,6 +971,22 @@ export function TripForm({
               placeholder="Quiet places, vegetarian food, avoid crowds…"
             />
           </label>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!preferencesDirty}
+            onClick={() => {
+              setPreferencesDirty(false);
+              if (origin && destination) changed();
+            }}
+          >
+            Apply preferences
+          </button>
+          <p className="field-help">
+            {preferencesDirty
+              ? "Preferences changed. Apply to update the route, or send a chat message to use them with Gemini."
+              : "Preferences are used when you apply them or send a chat message."}
+          </p>
         </details>
         {error && (
           <p role="alert" className="search-error">

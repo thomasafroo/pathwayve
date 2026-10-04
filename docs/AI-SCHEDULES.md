@@ -303,3 +303,27 @@ explicit chat/notes requests can still add places. Suggest mode permits relevant
 interest-based additions. Current sidebar values supersede stale conversation
 preferences. These are model instructions, not guarantees of verified amenities
 or prices.
+
+### Ordered discovery and partial plans
+
+Route discovery inserts an ordered generic request relative to the resolved
+anchors' original sequence numbers. A first breakfast can precede a later locked
+theater; it is not restricted to after the last locked stop. If a visit genuinely
+cannot be scheduled, later reachable visits retain their relative order and the
+run remains infeasible when a required request is missing. Flexible partial plans
+populate the workspace, and the sidebar also lists unresolved requests under
+“Still needs planning”. Map geometry includes only successfully routed visits.
+The sidebar reads the same map snapshot as the map for timed schedule previews.
+
+Preference fields no longer trigger the route debounce while being edited.
+**Apply preferences** requests a route update explicitly. Sending a chat message
+also uses the latest values. No timed automatic preference refresh is scheduled.
+Stop, order and travel-mode edits continue to update routes automatically.
+
+Geographically qualified requests (for example a theater downtown or No Frills
+near UBC) use the full qualified Places query outside the generic route radius.
+The planner checks both the item title and query to recover a qualifier dropped
+from one of them or an inconsistent `along_route` classification. Generic requests
+without a named area still use corridor discovery. Provider-missing cinema hours
+remain unverified: the UI links to place details and reminds users to confirm
+showtimes rather than treating a calculated arrival as a valid screening time.

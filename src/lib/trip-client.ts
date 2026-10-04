@@ -25,6 +25,10 @@ async function postTrip(path: string, body: unknown): Promise<TripState> {
 // Short-lived, tab-local versions; never reuse traffic/transit estimates indefinitely.
 const planCache = new Map<string, { trip: TripState; expires: number }>();
 const pendingPlans = new Map<string, Promise<TripState>>();
+export function clearPlanCache() {
+  planCache.clear();
+  pendingPlans.clear();
+}
 export async function cachedPlan(request: TripRequest): Promise<TripState> {
   const key = JSON.stringify(request);
   const cached = planCache.get(key);

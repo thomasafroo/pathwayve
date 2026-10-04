@@ -41,6 +41,11 @@ const document = {
               location: { lat: 49.26, lng: -123.2 },
             },
             transportation: "transit",
+            startTime: "2030-10-04T13:00:00-07:00",
+            endTime: "2030-10-04T18:00:00-07:00",
+            timeZone: "America/Vancouver",
+            activities: [],
+            preferences: "",
           },
           stops: [],
           legs: [
@@ -337,4 +342,45 @@ test("map enters and exits fullscreen and supports embedded-browser fallback", a
   await expect(
     page.getByRole("button", { name: "Enter fullscreen", exact: true }),
   ).toBeFocused();
+});
+
+test("partial schedule shows routed places and unresolved requests on the left", async ({
+  page,
+}) => {
+  const partial = structuredClone(document);
+  Object.assign(partial.schedule_runs[0], { status: "infeasible" });
+  Object.assign(partial.schedule_runs[0].result.map_trip, {
+    arrivalTime: "2030-10-04T17:00:00-07:00",
+    lastUpdated: "2030-10-04T12:00:00-07:00",
+    warnings: [],
+    summary: "Partial trip",
+    status: "ready",
+    stops: [
+      {
+        id: "theater",
+        name: "Downtown theater",
+        category: "attraction",
+        location: { lat: 49.28, lng: -123.12 },
+        arrivalTime: "2030-10-04T14:00:00-07:00",
+        durationMinutes: 90,
+        priority: "required",
+        locked: true,
+        reason: "Movie",
+      },
+    ],
+  });
+  await page.route("**/api/schedules/preview", (route) =>
+    route.fulfill({ json: { document: partial, workspace: null } }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  await page.getByLabel("Chat message").fill("Breakfast then a movie");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".chosen-stops")).toContainText("Downtown theater");
+  await expect(
+    page.getByRole("region", { name: "Unscheduled activities" }),
+  ).toContainText("Study for exam");
+  await expect(page.getByLabel("Departure", { exact: true })).not.toHaveValue(
+    "",
+  );
 });
