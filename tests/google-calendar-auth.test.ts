@@ -6,6 +6,7 @@ import {
   openGoogleData,
   sealGoogleData,
   validateGoogleState,
+  hasGoogleConnection,
 } from "@/lib/server/google-calendar-auth";
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +45,23 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("Google OAuth boundaries", () => {
+  it("reports the required migration when calendar storage is missing", async () => {
+    mocks.query.mockRejectedValueOnce(
+      Object.assign(new Error("missing table"), { code: "42P01" }),
+    );
+    await expect(
+      hasGoogleConnection("11111111-1111-4111-a111-111111111111"),
+    ).rejects.toMatchObject({ code: "GOOGLE_CALENDAR_STORAGE", status: 503 });
+  });
+  it("does not disguise other database failures as a missing migration", async () => {
+    const error = Object.assign(new Error("connection failure"), {
+      code: "08006",
+    });
+    mocks.query.mockRejectedValueOnce(error);
+    await expect(
+      hasGoogleConnection("11111111-1111-4111-a111-111111111111"),
+    ).rejects.toBe(error);
+  });
   it("encrypts tokens and rejects tampering or a different owner", () => {
     const sealed = sealGoogleData(
       { refresh_token: "private-token" },
@@ -54,7 +72,12 @@ describe("Google OAuth boundaries", () => {
       refresh_token: "private-token",
     });
     expect(() => openGoogleData(sealed, "tokens:two")).toThrow();
-    expect(() => openGoogleData(`${sealed[0] === "A" ? "B" : "A"}${sealed.slice(1)}`, "tokens:one")).toThrow();
+    expect(() =>
+      openGoogleData(
+        `${sealed[0] === "A" ? "B" : "A"}${sealed.slice(1)}`,
+        "tokens:one",
+      ),
+    ).toThrow();
   });
   it("rejects missing, incorrect and expired OAuth state", () => {
     const pending = {

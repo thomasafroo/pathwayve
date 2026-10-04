@@ -40,18 +40,22 @@ const json = (data: unknown, status = 200) =>
 
 describe("Google Calendar import and export", () => {
   it("uses calendar-local day boundaries across DST and exclusive all-day ends", () => {
-    const range = calendarDateRange(selection, calendar.timeZone);
+    // Historical transition: future timezone rules can change with tzdata updates.
+    const range = calendarDateRange(
+      { ...selection, startDate: "2024-03-10", endDate: "2024-03-10" },
+      calendar.timeZone,
+    );
     expect((Date.parse(range.end) - Date.parse(range.start)) / 3600000).toBe(
       23,
     );
     const event = normalizeGoogleEvent(
-      { ...raw, start: { date: "2030-03-10" }, end: { date: "2030-03-11" } },
+      { ...raw, start: { date: "2024-03-10" }, end: { date: "2024-03-11" } },
       calendar.id,
       calendar.timeZone,
     )!;
     expect(event.start).toBe(range.start);
     expect(event.end).toBe(range.end);
-    expect(calendarEventsFile([event])).toContain("DTEND;VALUE=DATE:20300311");
+    expect(calendarEventsFile([event])).toContain("DTEND;VALUE=DATE:20240311");
     expect(
       calendarConflict(
         [event],
