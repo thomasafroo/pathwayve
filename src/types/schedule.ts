@@ -40,6 +40,7 @@ export const itemIntentSchema = z.object({
 
 // Gemini produces intentions, not SQL text, ownership IDs, or invented route estimates.
 export const generatedScheduleSchema = z.object({
+  removed_stop_ids: z.array(z.string().min(1)).max(6).optional(),
   schema_version: z.literal(1),
   clarification: z.string().max(500).nullable(),
   schedules: z
@@ -113,6 +114,7 @@ export type UnscheduledItem = {
   reason: string;
 };
 export type RunResult = {
+  workspace_snapshot?: import("./workspace").WorkspaceTrip;
   // Display-only snapshot, including provider geometry. Older saves may omit it.
   map_trip?: TripState;
   placements: Placement[];

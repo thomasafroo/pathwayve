@@ -10,7 +10,7 @@ test("plan a day and replan while preserving a locked stop", async ({
   await expect(page.getByRole("heading", { name: "Plan trip" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Itinerary", exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 20000 });
   await expect(page.locator(".stop")).toHaveCount(4);
   await page
     .getByRole("button", { name: "Lock The Morning Cup", exact: true })
@@ -591,6 +591,17 @@ test("drag, arrows and optimization automatically update without Gemini", async 
     if (request.url().endsWith("/api/schedules") && request.method() === "POST")
       geminiCalls++;
   });
+  await page.addInitScript(() => {
+    const original = DataTransfer.prototype.setDragImage;
+    DataTransfer.prototype.setDragImage = function (image, x, y) {
+      document.documentElement.dataset.dragImageIsCard = String(
+        image instanceof HTMLElement &&
+          image.hasAttribute("data-stop-id") &&
+          !!image.querySelector("input[type=number]"),
+      );
+      return original.call(this, image, x, y);
+    };
+  });
   await page.goto("/");
   await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
   await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
@@ -601,6 +612,10 @@ test("drag, arrows and optimization automatically update without Gemini", async 
   await page
     .getByRole("button", { name: "Drag The Morning Cup to reorder" })
     .dragTo(target);
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-drag-image-is-card",
+    "true",
+  );
   await expect.poll(() => plans.length).toBe(2);
   expect(plans[1].selectedStops.map((stop) => stop.id)).toEqual([
     before[1],

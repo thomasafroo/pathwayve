@@ -331,3 +331,98 @@ it("AI planning waits for opening and records hours conflicts for mandatory stop
       .reason_code,
   ).toBe("OPENING_HOURS");
 });
+
+it("removes explicitly requested optional stops but preserves required and locked choices", async () => {
+  const input = constraints();
+  input.selectedStops.push({
+    ...place("Optional cafe", 49.29, -123.13),
+    durationMinutes: 30,
+    locked: false,
+    priority: "optional",
+  });
+  input.selectedStops.push({
+    ...place("Locked cafe", 49.3, -123.13),
+    durationMinutes: 30,
+    locked: true,
+    priority: "optional",
+  });
+  const draft = {
+    ...scheduleIntent(),
+    schedule_items: [],
+    removed_stop_ids: input.selectedStops.map((stop) => stop.id),
+  };
+  const enforced = enforceScheduleConstraints(draft, input);
+  expect(enforced.schedule_items.map((item) => item.selected_stop_id)).toEqual([
+    requiredPlace.id,
+    "Locked cafe",
+  ]);
+  expect(
+    enforced.schedule_items.every((item) => item.priority === "required"),
+  ).toBe(true);
+  const result = await materializeSchedule(draft, owner, input);
+  expect(result.workspace?.trip.stops.map((stop) => stop.id)).toEqual([
+    requiredPlace.id,
+    "Locked cafe",
+  ]);
+});
+it("does not accidentally delete optional stops omitted by the model", () => {
+  const input = constraints();
+  input.selectedStops[0].priority = "optional";
+  const enforced = enforceScheduleConstraints(
+    { ...scheduleIntent(), schedule_items: [] },
+    input,
+  );
+  expect(enforced.schedule_items[0]).toMatchObject({
+    selected_stop_id: requiredPlace.id,
+    priority: "optional",
+  });
+});
+it("rejects invented removal IDs and permits a conversational required upgrade", () => {
+  const input = constraints();
+  expect(() =>
+    enforceScheduleConstraints(
+      { ...scheduleIntent(), removed_stop_ids: ["invented"] },
+      input,
+    ),
+  ).toThrow("unknown stop");
+  input.selectedStops[0].priority = "optional";
+  const draft = scheduleIntent();
+  draft.schedule_items[0].selected_stop_id = requiredPlace.id;
+  draft.schedule_items[0].priority = "required";
+  expect(
+    enforceScheduleConstraints(draft, input).schedule_items[0].priority,
+  ).toBe("required");
+});
+
+it("does not rediscover a rejected optional venue as a named replacement", async () => {
+  const input = constraints();
+  input.selectedStops[0].priority = "optional";
+  const replacement = place("Other cafe", 49.29, -123.13);
+  vi.mocked(searchPlaces).mockResolvedValue({
+    source: "live",
+    places: [requiredPlace, replacement],
+  });
+  const draft = scheduleIntent();
+  draft.removed_stop_ids = [requiredPlace.id];
+  draft.schedule_items[0].place_query = "A different cafe";
+  const result = await materializeSchedule(draft, owner, input);
+  expect(result.workspace?.trip.stops.map((stop) => stop.id)).toEqual([
+    replacement.id,
+  ]);
+});
+it("does not rediscover a rejected venue in generic route-corridor searches", async () => {
+  const input = constraints();
+  input.selectedStops[0].priority = "optional";
+  vi.mocked(searchPlaces).mockResolvedValue({
+    source: "live",
+    places: [requiredPlace],
+  });
+  const draft = scheduleIntent();
+  draft.removed_stop_ids = [requiredPlace.id];
+  draft.schedule_items[0].location_scope = "along_route";
+  draft.schedule_items[0].place_query = "coffee";
+  const result = await materializeSchedule(draft, owner, input);
+  expect(
+    result.document.schedule_runs[0].result.map_trip?.stops ?? [],
+  ).toHaveLength(0);
+});

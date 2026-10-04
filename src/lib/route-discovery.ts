@@ -87,6 +87,7 @@ export async function discoverRoutePlace({
   anchors,
   request,
   radiusMeters,
+  excludedPlaceIds = [],
 }: {
   query: string;
   item: SavedItem;
@@ -95,6 +96,7 @@ export async function discoverRoutePlace({
   anchors: RouteAnchor[];
   request: TripRequest;
   radiusMeters: number;
+  excludedPlaceIds?: string[];
 }): Promise<{ place: CandidatePlace; index: number } | null> {
   if (anchors.length >= 6) return null;
   const base = await traceRoute(origin, destination, anchors, request);
@@ -133,6 +135,7 @@ export async function discoverRoutePlace({
   const candidates = [...unique.values()]
     .filter(
       (place) =>
+        !excludedPlaceIds.includes(place.id) &&
         place.id !== origin.id &&
         place.id !== destination.id &&
         !anchors.some((a) => a.place.id === place.id),

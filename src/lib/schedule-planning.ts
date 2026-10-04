@@ -42,15 +42,31 @@ export async function materializeSchedule(
       "Choose a future departure, then send the prompt again.",
       422,
     );
+  const excludedPlaceIds = (constraints?.selectedStops ?? [])
+    .filter(
+      (stop) =>
+        !stop.locked &&
+        (stop.priority ?? "required") !== "required" &&
+        draft.removed_stop_ids?.includes(stop.id),
+    )
+    .map((stop) => stop.id);
   const source = mapsMode();
-  const find = async (query: string, near?: CandidatePlace["location"]) => {
+  const find = async (
+    query: string,
+    near?: CandidatePlace["location"],
+    excludeRejected = false,
+  ) => {
     const response = await searchPlaces({
       query,
       category: "attraction",
       budget: "any",
       near,
     });
-    return response.places[0] ?? null;
+    return (
+      response.places.find(
+        (place) => !excludeRejected || !excludedPlaceIds.includes(place.id),
+      ) ?? null
+    );
   };
   const endpointPlace = (
     endpoint: NonNullable<PlanningConstraints["origin"]>,
@@ -113,7 +129,7 @@ export async function materializeSchedule(
     } else if (item.place_query && model.location_scope === "along_route") {
       genericIds.add(item.id);
     } else if (item.place_query) {
-      const place = await find(item.place_query);
+      const place = await find(item.place_query, undefined, true);
       if (place) {
         item.place_id = place.id;
         places.set(item.id, place);
@@ -137,6 +153,8 @@ export async function materializeSchedule(
     transportation: intent.transportation,
     activities: [],
     preferences: intent.preferences.notes,
+    interestTags: intent.preferences.interests,
+    suggestionMode: constraints?.suggestionMode,
     orderPolicy: intent.preferences.order_policy,
     routingPriority:
       intent.preferences.order_policy === "optimize"
@@ -209,6 +227,7 @@ export async function materializeSchedule(
           anchors,
           request,
           radiusMeters: constraints?.routeRadiusMeters ?? 1000,
+          excludedPlaceIds,
         });
         if (addition) {
           item.place_id = addition.place.id;

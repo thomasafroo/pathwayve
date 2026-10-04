@@ -1,7 +1,7 @@
-# Prompt → Gemini JSON → SQL
+# Prompt → Gemini draft → manual save
 
 The bottom-centered composer sends a prompt to `POST /api/schedules`. It generates
-a **new schedule**, even if an existing manual trip supplies context. Saved
+an **unsaved draft**, even if an existing manual trip supplies context. Saved
 schedules can be opened from the composer after refresh in the same browser.
 
 ## Pipeline
@@ -18,17 +18,22 @@ schedules can be opened from the composer after refresh in the same browser.
    allow waiting before appointments, check time windows and the final destination.
 5. Assign server-generated UUIDs, ownership, versions, and timestamps. Classify
    every activity as placed or unscheduled. Preserve all activities in the save.
-6. Insert the schedule, items, and run in **one parameterized SQL transaction**.
-   The browser's request UUID prevents duplicate saves when the same request is
-   retried. Model/network failures before save do not leave partial rows.
-7. Display the saved result. Flexible visit-only feasible plans also populate the
-   existing map/itinerary workspace. Fixed appointments and standalone tasks use
-   the saved details view because the older workspace cannot represent all their
-   constraints safely.
-   All successfully calculated routes also save a display-only `result.map_trip`
-   snapshot containing coordinates and route geometry. The map reads this snapshot
-   for timed schedules and reopened saves. Older saves without it require a new
-   generation to show a route; no geometry is invented from place IDs.
+6. Display the unsaved draft. **Save schedule** explicitly posts the reviewed
+   document to `/api/schedules/save`. **Save current trip** saves the current
+   manually edited workspace instead. Saves use server-owned identities and one
+   parameterized SQL transaction; the save request UUID prevents duplicate retries.
+7. Open a saved result from the composer, then choose **Import places to planner**
+   to copy its map snapshot into the left editor. Edits can be saved as a new copy;
+   the original stays unchanged. Manual saves include activities in
+   `result.workspace_snapshot`. Timed appointment rules and standalone tasks in AI
+   schedules remain in the original snapshot, because the route editor cannot
+   represent them; the UI explains this before import.
+8. **Delete schedule** removes the selected owned save and its items/runs. It does
+   not remove the current working route. Old documents without `result.map_trip`
+   cannot be imported; generate a new route for those documents.
+
+Left-panel preferences persist locally in the same browser. Importing a schedule
+loads that schedule's preferences and dates; old dates are not shifted silently.
 
 ## JSON and tables
 
@@ -80,11 +85,13 @@ required TLS configuration; certificate verification is not disabled by the app.
 
 ## Endpoints
 
-| Endpoint                 | Purpose                                                                   |
-| ------------------------ | ------------------------------------------------------------------------- |
-| `POST /api/schedules`    | Prompt + `timeZone` + `requestId` + optional `context`; generate and save |
-| `GET /api/schedules`     | Latest 30 schedule summaries belonging to the current browser             |
-| `GET /api/schedules/:id` | Read the saved JSON document for an owned schedule                        |
+| Endpoint                    | Purpose                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------- |
+| `POST /api/schedules`       | Prompt + `timeZone` + `requestId` + optional `context`; generate an unsaved draft |
+| `GET /api/schedules`        | Latest 30 schedule summaries belonging to the current browser                     |
+| `POST /api/schedules/save`  | Explicitly save a draft or workspace; retries are idempotent                      |
+| `DELETE /api/schedules/:id` | Delete an owned save and its items/runs                                           |
+| `GET /api/schedules/:id`    | Read the saved JSON document for an owned schedule                                |
 
 ## Current boundaries
 
@@ -210,3 +217,51 @@ watch. Follow my location also offers Use my location as start for planning.
 
 References: [Place fields](https://developers.google.com/maps/documentation/places/web-service/reference/rest/v1/places),
 [Maps URLs](https://developers.google.com/maps/documentation/urls/get-started).
+
+## Required and optional selections
+
+Each selected stop now has a Required checkbox. New choices default to required;
+unchecking makes the stop optional. Individual locks always protect a stop, even
+if an older JSON payload labels it optional. The priority is sent in both manual
+requests and chat constraints (missing priority retains the legacy required
+behavior).
+
+Gemini returns `removed_stop_ids` for optional/preferred sidebar stops explicitly
+removed by the user's conversation. Enforcement checks these IDs, refuses to
+remove required/locked selections, and retains optional stops merely omitted by
+the model. A retained optional stop can be upgraded to required by a matching
+model item in response to a keep-it request. Remaining selected stops retain their
+relative order and authoritative Places coordinates. The next saved schedule and
+editable map use the resulting stops; earlier saved snapshots remain unchanged.
+
+Desktop dragging uses the entire stop card as the native drag image. Neighboring
+cards animate to preview insertion without changing the planner request. Drop
+commits one change; cancellation restores the original sequence. Arrow controls
+remain available, locked positions cannot be crossed, and reduced-motion
+preferences disable the reorder animation.
+
+Conversational removals now use a focused Gemini interpretation pass before
+itinerary generation whenever sidebar stops exist. Every current stop must get
+an explicit keep/remove decision; incomplete decisions fail without changing the
+route. The interpreter resolves unambiguous nicknames/misspellings and rejection,
+replacement, convenience, and category-avoidance requests, while keeping unrelated
+optional stops. Ambiguity or removal of protected stops returns clarification.
+Validated removal IDs override the itinerary generator's removal field. Rejected
+provider IDs are excluded from named replacement lookup and route-corridor
+search, preventing immediate re-addition. The chat reply lists actual removed
+places from the resulting saved document. This adds one Gemini request for chats
+with existing selected stops; new trips with no selections retain one request.
+
+### Sidebar preferences in chat
+
+Both Gemini stages receive current sidebar preferences. The stop-edit interpreter
+reads notes (including disliked places/categories), interests, activities, budget,
+suggestion mode and route priority before deciding whether to remove a stop.
+A generic “adapt to my preferences on the side” prompt therefore uses the current
+notes without asking the user to repeat them. Required/locked conflicts still
+return a specific checkbox/unlock instruction. The itinerary stage receives all
+constraints and uses manual suggestion mode to avoid unsolicited new visits;
+explicit chat/notes requests can still add places. Suggest mode permits relevant
+interest-based additions. Current sidebar values supersede stale conversation
+preferences. These are model instructions, not guarantees of verified amenities
+or prices.

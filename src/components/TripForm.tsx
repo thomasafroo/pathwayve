@@ -1,6 +1,8 @@
 "use client";
+import { z } from "zod";
 import {
   useEffect,
+  useLayoutEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -24,7 +26,25 @@ import {
 } from "@/types/planning-constraints";
 export type TripFormHandle = {
   getConstraints: () => PlanningConstraints;
+  importTrip: (trip: TripState) => void;
   useLocation: (location: TripRequest["origin"]["location"]) => void;
+};
+const storedPreferences = z.object({
+  activities: z.array(z.enum(categories)).max(6),
+  interests: z.array(z.string().max(80)).max(20),
+  budget: z.enum(["any", "budget", "moderate", "premium"]),
+  notes: z.string().max(1000),
+  routingPriority: z.enum(["fastest", "less_walking", "fewer_transfers"]),
+  radius: z.enum(["500", "1000", "3000"]),
+  transportation: z.enum(["walking", "driving", "transit"]),
+  orderPolicy: z.enum(["preserve", "optimize"]),
+  suggestionMode: z.enum(["manual", "suggest"]),
+});
+const localDate = (iso: string) => {
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
 };
 const tags = [
   "Libraries",
@@ -58,7 +78,12 @@ export function TripForm({
   const [revision, setRevision] = useState(0);
   const attemptedRevision = useRef(0);
   const draggedId = useRef<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null);
+  const dragOrderRef = useRef<string[] | null>(null);
+  const stopList = useRef<HTMLDivElement>(null);
+  const priorPositions = useRef(new Map<string, number>());
+  const lastHover = useRef<string | null>(null);
   const changed = () => setRevision((value) => value + 1);
   const formRef = useRef<HTMLFormElement>(null);
   const [origin, setOrigin] = useState<TripRequest["origin"] | null>(null),
@@ -84,12 +109,81 @@ export function TripForm({
   );
   const [favorites, setFavorites] = useState<CandidatePlace[]>([]);
   const [interests, setInterests] = useState<string[]>([]);
+  const [notes, setNotes] = useState("");
+  const [routingPriority, setRoutingPriority] = useState("fastest");
+  const [radius, setRadius] = useState("1000");
+  const [startValue, setStartValue] = useState("");
+  const [endValue, setEndValue] = useState("");
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const [budget, setBudget] = useState("any");
   const [error, setError] = useState("");
   const [findStops, setFindStops] = useState(false);
   const [suggestionMode, setSuggestionMode] = useState<"manual" | "suggest">(
     "manual",
   );
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      try {
+        const parsed = storedPreferences.safeParse(
+          JSON.parse(
+            localStorage.getItem("pathwayve-preferences-v1") ?? "null",
+          ),
+        );
+        if (parsed.success) {
+          const p = parsed.data;
+          setActivities(p.activities);
+          setInterests(p.interests);
+          setBudget(p.budget);
+          setNotes(p.notes);
+          setRoutingPriority(p.routingPriority);
+          setRadius(p.radius);
+          setTransportation(p.transportation);
+          setOrderPolicy(p.orderPolicy);
+          setSuggestionMode(p.suggestionMode);
+        }
+      } catch {
+        /* Storage may be unavailable; keep the form usable. */
+      }
+      setPreferencesReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!preferencesReady) return;
+    try {
+      localStorage.setItem(
+        "pathwayve-preferences-v1",
+        JSON.stringify({
+          activities,
+          interests,
+          budget,
+          notes,
+          routingPriority,
+          radius,
+          transportation,
+          orderPolicy,
+          suggestionMode,
+        }),
+      );
+    } catch {
+      /* Best effort in restricted browsers. */
+    }
+  }, [
+    preferencesReady,
+    activities,
+    interests,
+    budget,
+    notes,
+    routingPriority,
+    radius,
+    transportation,
+    orderPolicy,
+    suggestionMode,
+  ]);
   const [syncedTrip, setSyncedTrip] = useState(currentTrip);
   const [consumedPlace, setConsumedPlace] = useState(pendingPlace);
   if (pendingPlace && pendingPlace !== consumedPlace) {
@@ -109,11 +203,17 @@ export function TripForm({
   }
   if (currentTrip !== syncedTrip) {
     setSyncedTrip(currentTrip);
+    setDragOrder(null);
     setRevision(0);
     if (currentTrip) {
       setOrigin(currentTrip.request.origin);
       setDestination(currentTrip.request.destination);
       setTransportation(currentTrip.request.transportation);
+      setActivities(currentTrip.request.activities);
+      setInterests(currentTrip.request.interestTags ?? []);
+      setBudget(currentTrip.request.budget ?? "any");
+      setNotes(currentTrip.request.preferences);
+      setRoutingPriority(currentTrip.request.routingPriority ?? "fastest");
       setOrderPolicy(currentTrip.request.orderPolicy ?? "preserve");
       setEditing(null);
       setSelected(
@@ -125,6 +225,29 @@ export function TripForm({
     }
   }
   useImperativeHandle(ref, () => ({
+    importTrip(trip) {
+      const request = trip.request;
+      setOrigin(request.origin);
+      setDestination(request.destination);
+      setSelected(
+        trip.stops.map((stop) => ({
+          ...stop,
+          priority: stop.priority ?? "optional",
+        })),
+      );
+      setTransportation(request.transportation);
+      setActivities(request.activities);
+      setInterests(request.interestTags ?? []);
+      setBudget(request.budget ?? "any");
+      setNotes(request.preferences);
+      setOrderPolicy(request.orderPolicy ?? "preserve");
+      setRoutingPriority(request.routingPriority ?? "fastest");
+      setSuggestionMode(request.suggestionMode ?? "manual");
+      setStartValue(localDate(request.startTime));
+      setEndValue(localDate(request.endTime));
+      setEditing(null);
+      setRevision(0);
+    },
     useLocation(location) {
       setOrigin({ name: "Your current location", location });
       setEditing(destination ? null : "destination");
@@ -152,11 +275,87 @@ export function TripForm({
         budget,
         activities,
         interestTags: interests,
+        suggestionMode,
         preferences: String(form.get("preferences") || ""),
         routeRadiusMeters: Number(form.get("routeRadius") || 1000),
       });
     },
   }));
+  const displayedStops = dragOrder
+    ? dragOrder.flatMap((id) => selected.filter((stop) => stop.id === id))
+    : selected;
+  useLayoutEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    stopList.current
+      ?.querySelectorAll<HTMLElement>("[data-stop-id]")
+      .forEach((card) => {
+        const previous = priorPositions.current.get(card.dataset.stopId!);
+        if (previous !== undefined) {
+          const delta = previous - card.getBoundingClientRect().top;
+          if (delta)
+            card.animate(
+              [
+                { transform: `translateY(${delta}px)` },
+                { transform: "translateY(0)" },
+              ],
+              { duration: 180, easing: "ease-out" },
+            );
+        }
+      });
+    priorPositions.current.clear();
+  }, [dragOrder]);
+  function previewMove(targetId: string) {
+    const id = draggedId.current;
+    if (!id || busy || lastHover.current === targetId || id === targetId)
+      return;
+    const fromOriginal = selected.findIndex((stop) => stop.id === id);
+    const toOriginal = selected.findIndex((stop) => stop.id === targetId);
+    if (
+      fromOriginal < 0 ||
+      toOriginal < 0 ||
+      selected
+        .slice(
+          Math.min(fromOriginal, toOriginal),
+          Math.max(fromOriginal, toOriginal) + 1,
+        )
+        .some((stop) => stop.locked)
+    )
+      return;
+    lastHover.current = targetId;
+    const order = [
+      ...(dragOrderRef.current ?? selected.map((stop) => stop.id)),
+    ];
+    const from = order.indexOf(id),
+      to = order.indexOf(targetId);
+    stopList.current
+      ?.querySelectorAll<HTMLElement>("[data-stop-id]")
+      .forEach((card) =>
+        priorPositions.current.set(
+          card.dataset.stopId!,
+          card.getBoundingClientRect().top,
+        ),
+      );
+    order.splice(to, 0, order.splice(from, 1)[0]);
+    dragOrderRef.current = order;
+    setDragOrder(order);
+  }
+  function finishDrag(commit: boolean) {
+    const order = dragOrderRef.current;
+    if (
+      commit &&
+      order &&
+      order.some((id, index) => id !== selected[index]?.id)
+    ) {
+      setSelected(order.map((id) => selected.find((stop) => stop.id === id)!));
+      setOrderPolicy("preserve");
+      changed();
+    }
+    draggedId.current = null;
+    setDragging(null);
+    dragOrderRef.current = null;
+    lastHover.current = null;
+    setDragOrder(null);
+  }
   function moveStop(from: number, to: number) {
     if (busy || from === to || from < 0 || to < 0 || to >= selected.length)
       return;
@@ -241,6 +440,7 @@ export function TripForm({
     }
     if (
       busy ||
+      dragOrder ||
       !origin ||
       !destination ||
       revision === attemptedRevision.current
@@ -275,7 +475,7 @@ export function TripForm({
       }}
       className="trip-form"
     >
-      <fieldset disabled={busy}>
+      <fieldset disabled={busy || !preferencesReady}>
         <div className="form-heading">
           <h1>Plan trip</h1>
           <p>Choose your route and stops.</p>
@@ -381,8 +581,12 @@ export function TripForm({
             Route priority
             <select
               name="priority"
-              key={`${transportation}-${orderPolicy}`}
-              defaultValue="fastest"
+              value={
+                orderPolicy === "optimize" || transportation !== "transit"
+                  ? "fastest"
+                  : routingPriority
+              }
+              onChange={(event) => setRoutingPriority(event.target.value)}
               disabled={orderPolicy === "optimize"}
             >
               <option value="fastest">Fastest available route</option>
@@ -399,6 +603,8 @@ export function TripForm({
               Departure
               <input
                 aria-describedby="time-help"
+                value={startValue}
+                onChange={(event) => setStartValue(event.target.value)}
                 name="start"
                 type="datetime-local"
               />
@@ -407,6 +613,8 @@ export function TripForm({
               Finish by
               <input
                 aria-describedby="time-help"
+                value={endValue}
+                onChange={(event) => setEndValue(event.target.value)}
                 name="end"
                 type="datetime-local"
               />
@@ -422,12 +630,16 @@ export function TripForm({
           <span>{selected.length}/6</span>
         </div>
         <p className="hint">
-          Chat keeps these stops and your travel mode. Remove a stop here to
-          leave it out.
+          Required stops stay in your plan. Uncheck Required to let Gemini
+          remove a stop when you ask. Locked stops are always protected.
         </p>
         <label>
           Search distance from route
-          <select name="routeRadius" defaultValue="1000">
+          <select
+            name="routeRadius"
+            value={radius}
+            onChange={(event) => setRadius(event.target.value)}
+          >
             <option value="500">Within 500 m</option>
             <option value="1000">Within 1 km</option>
             <option value="3000">Within 3 km</option>
@@ -451,29 +663,24 @@ export function TripForm({
             ? "Your selected sequence is enforced in routes and chat. Extra stops can fit between your choices."
             : "Compare actual travel times for your mode. Keeps locked positions; up to 12 orders compared, not a guaranteed global optimum."}
         </p>
-        <div className="chosen-stops">
-          {selected.map((place, index) => (
+        <div className="chosen-stops" ref={stopList}>
+          {displayedStops.map((place, index) => (
             <div
               key={place.id}
               data-stop-id={place.id}
               className={
-                dropTarget === place.id ? "stop-drop-target" : undefined
+                dragOrder && place.id === dragging ? "stop-dragging" : undefined
               }
               onDragOver={(event) => {
-                if (!busy && !place.locked) {
+                if (!busy && !place.locked && draggedId.current) {
                   event.preventDefault();
                   event.dataTransfer.dropEffect = "move";
-                  setDropTarget(place.id);
+                  previewMove(place.id);
                 }
               }}
               onDrop={(event) => {
                 event.preventDefault();
-                const from = selected.findIndex(
-                  (stop) => stop.id === draggedId.current,
-                );
-                moveStop(from, index);
-                draggedId.current = null;
-                setDropTarget(null);
+                finishDrag(true);
               }}
             >
               <button
@@ -485,13 +692,21 @@ export function TripForm({
                 title="Drag to reorder, or use the arrows"
                 onDragStart={(event) => {
                   draggedId.current = place.id;
+                  setDragging(place.id);
+                  dragOrderRef.current = selected.map((stop) => stop.id);
+                  const card =
+                    event.currentTarget.closest<HTMLElement>("[data-stop-id]")!;
+                  const bounds = card.getBoundingClientRect();
+                  event.dataTransfer.setDragImage(
+                    card,
+                    event.clientX - bounds.left,
+                    event.clientY - bounds.top,
+                  );
+                  setDragOrder(selected.map((stop) => stop.id));
                   event.dataTransfer.setData("text/plain", place.id);
                   event.dataTransfer.effectAllowed = "move";
                 }}
-                onDragEnd={() => {
-                  draggedId.current = null;
-                  setDropTarget(null);
-                }}
+                onDragEnd={() => finishDrag(false)}
               >
                 ⠿
               </button>
@@ -518,6 +733,29 @@ export function TripForm({
                 <strong>
                   {index + 1}. {place.name}
                 </strong>
+                <label className="required-stop-toggle">
+                  <input
+                    type="checkbox"
+                    aria-label={`Required stop: ${place.name}`}
+                    checked={place.locked || place.priority === "required"}
+                    disabled={place.locked || busy}
+                    onChange={(event) =>
+                      setSelected(
+                        selected.map((stop) =>
+                          stop.id === place.id
+                            ? {
+                                ...stop,
+                                priority: event.target.checked
+                                  ? "required"
+                                  : "optional",
+                              }
+                            : stop,
+                        ),
+                      )
+                    }
+                  />
+                  {place.locked ? "Required · locked" : "Required"}
+                </label>
                 {place.openingHours && <PlaceHours place={place} />}
               </div>
               <label>
@@ -692,6 +930,8 @@ export function TripForm({
           <label>
             Anything else?
             <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
               name="preferences"
               maxLength={1000}
               rows={3}

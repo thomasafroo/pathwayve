@@ -1447,3 +1447,41 @@ body {
 .navigation-panel li {
   margin: 8px 0;
 }
+
+.maps-workspace .chosen-stops .required-stop-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: 11px;
+  color: #527169;
+}
+.maps-workspace .chosen-stops .required-stop-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  accent-color: #216956;
+}
+.maps-workspace .chosen-stops > .stop-dragging {
+  opacity: 0.4;
+  outline: 2px dashed #216956;
+  background: #e0eee7;
+}
+.maps-workspace .chosen-stops > div {
+  transition:
+    opacity 150ms ease,
+    background-color 150ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .maps-workspace .chosen-stops > div {
+    transition: none;
+  }
+}
+
+.schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}

@@ -10,6 +10,7 @@ export const planningConstraintsSchema = z
         candidatePlaceSchema.extend({
           durationMinutes: z.number().int().min(5).max(180),
           locked: z.boolean(),
+          priority: z.enum(["required", "preferred", "optional"]).optional(),
         }),
       )
       .max(6)
@@ -29,6 +30,7 @@ export const planningConstraintsSchema = z
     }, "Invalid timezone."),
     orderPolicy: z.enum(["preserve", "optimize"]).optional(),
     routingPriority: z.enum(["fastest", "less_walking", "fewer_transfers"]),
+    suggestionMode: z.enum(["manual", "suggest"]).optional(),
     budget: z.enum(["any", "budget", "moderate", "premium"]),
     activities: z.array(z.enum(categories)).max(6),
     interestTags: z.array(z.string().max(80)).max(20),

@@ -22,7 +22,11 @@ export async function scheduleOwner(): Promise<string> {
 }
 export function checkOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin)
+  // Next may normalize the internal URL hostname; Host identifies the browser-facing site.
+  const site = new URL(request.url);
+  const host = request.headers.get("host");
+  if (host) site.host = host;
+  if (origin && origin !== site.origin)
     throw new AppError(
       "ORIGIN",
       "Use the planner on this site to save schedules.",

@@ -93,7 +93,7 @@ test("chat panel sends prompt, saves, and reopens after refresh", async ({
   await page.route("**/api/schedules", async (route) => {
     if (route.request().method() === "POST") {
       requestBody = route.request().postDataJSON();
-      saved = true;
+
       await route.fulfill({ json: { document, workspace: null } });
     } else
       await route.fulfill({
@@ -101,6 +101,10 @@ test("chat panel sends prompt, saves, and reopens after refresh", async ({
           ? [{ id, name: "Coffee and study time", status: "feasible" }]
           : [],
       });
+  });
+  await page.route("**/api/schedules/save", (route) => {
+    saved = true;
+    return route.fulfill({ json: document });
   });
   await page.route(`**/api/schedules/${id}`, (route) =>
     route.fulfill({ json: document }),
@@ -111,7 +115,15 @@ test("chat panel sends prompt, saves, and reopens after refresh", async ({
     .getByLabel("Chat message")
     .fill("Coffee then study tomorrow from SFU to downtown.");
   await chat.getByRole("button", { name: "Send message" }).click();
-  await expect(chat).toContainText("Saved “Coffee and study time”");
+  await expect(chat).toContainText("Draft “Coffee and study time”");
+  expect(saved).toBe(false);
+  await page
+    .getByRole("button", { name: "Save schedule", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Delete schedule", exact: true }),
+  ).toBeVisible();
+  expect(saved).toBe(true);
   await expect(
     page.getByRole("region", { name: "Saved schedule details" }),
   ).toContainText("Not scheduled: Choose a quiet place");
@@ -207,14 +219,23 @@ test("chat uses current sidebar stops and mode before a manual trip is created",
   await page.getByLabel("Search distance from route").selectOption("500");
   await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T13:00");
   await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T18:00");
+  await page
+    .getByRole("checkbox", {
+      name: "Required stop: The Morning Cup",
+      exact: true,
+    })
+    .uncheck();
   const chat = await openChat(page);
-  await chat
-    .getByLabel("Chat message")
-    .fill("Add a coffee shop along this route.");
+  await chat.getByLabel("Chat message").fill("Remove the optional cafe.");
   await chat.getByRole("button", { name: "Send message" }).click();
   await expect(chat.getByRole("alert")).toHaveText("Test retry");
   expect(requests[0].constraints.transportation).toBe("driving");
   expect(requests[0].constraints.selectedStops).toHaveLength(4);
+  expect(
+    requests[0].constraints.selectedStops.find(
+      (stop) => stop.name === "The Morning Cup",
+    )?.priority,
+  ).toBe("optional");
   expect(requests[0].constraints.origin?.name).toBe("SFU Burnaby");
   expect(requests[0].constraints.routeRadiusMeters).toBe(500);
   expect(requests[0].constraints.startTime).toBeTruthy();

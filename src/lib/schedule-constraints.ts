@@ -15,7 +15,20 @@ export function enforceScheduleConstraints(
   ) =>
     item.selected_stop_id === stop.id ||
     item.place_query?.trim().toLowerCase() === stop.name.trim().toLowerCase();
-  const required = selectedStops.map((stop, index) => {
+  const removals = new Set(draft.removed_stop_ids ?? []);
+  if ([...removals].some((id) => !selectedStops.some((stop) => stop.id === id)))
+    throw new AppError(
+      "INVALID_STOP_REMOVAL",
+      "The assistant referenced an unknown stop. Please try your request again.",
+      422,
+    );
+  const retained = selectedStops.filter(
+    (stop) =>
+      stop.locked ||
+      (stop.priority ?? "required") === "required" ||
+      !removals.has(stop.id),
+  );
+  const required = retained.map((stop, index) => {
     const modelItem = draft.schedule_items.find((item) => matches(item, stop));
     return {
       ...modelItem,
@@ -25,7 +38,12 @@ export function enforceScheduleConstraints(
       selected_stop_id: stop.id,
       location_scope: "specific" as const,
       duration_minutes: stop.durationMinutes,
-      priority: "required" as const,
+      priority:
+        stop.locked ||
+        (stop.priority ?? "required") === "required" ||
+        modelItem?.priority === "required"
+          ? ("required" as const)
+          : stop.priority!,
       timing_type: modelItem?.timing_type ?? ("flexible" as const),
       fixed_start_at: modelItem?.fixed_start_at ?? null,
       earliest_start_at: modelItem?.earliest_start_at ?? null,

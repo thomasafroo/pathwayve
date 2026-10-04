@@ -31,6 +31,7 @@ export function TripChat({
   onSaved: (
     document: ScheduleDocument,
     workspace: WorkspaceTrip | null,
+    persisted?: boolean,
   ) => void;
   onClose: () => void;
 }) {
@@ -70,23 +71,27 @@ export function TripChat({
   }, [messages, error]);
   useEffect(() => {
     let active = true;
-    fetch("/api/schedules")
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok)
-          throw new Error(
-            data.error?.message || "Saved schedules are unavailable.",
-          );
-        if (active) setSaved(data);
-      })
-      .catch((err) => {
-        if (active) setError(err.message);
-      })
-      .finally(() => {
-        if (active) setReady(true);
-      });
+    const refreshSaved = () =>
+      fetch("/api/schedules")
+        .then(async (response) => {
+          const data = await response.json();
+          if (!response.ok)
+            throw new Error(
+              data.error?.message || "Saved schedules are unavailable.",
+            );
+          if (active) setSaved(data);
+        })
+        .catch((err) => {
+          if (active) setError(err.message);
+        })
+        .finally(() => {
+          if (active) setReady(true);
+        });
+    void refreshSaved();
+    window.addEventListener("schedules-changed", refreshSaved);
     return () => {
       active = false;
+      window.removeEventListener("schedules-changed", refreshSaved);
     };
   }, []);
   async function submit(event: FormEvent) {
@@ -125,7 +130,7 @@ export function TripChat({
       if (!response.ok)
         throw new Error(
           data.error?.message ||
-            "We couldn’t save your schedule. Please try again.",
+            "We couldn’t generate your schedule. Please try again.",
         );
       if (data.clarification) {
         onMessages((previous) => [
@@ -149,29 +154,35 @@ export function TripChat({
         ? workspaceSchema.parse(data.workspace)
         : null;
       onSaved(document, workspace);
-      setSaved((current) =>
-        [
-          { id: schedule.id, name: schedule.name, status: run.status },
-          ...current.filter((item) => item.id !== schedule.id),
-        ].slice(0, 30),
+      const resultingPlaceIds = new Set(
+        document.schedule_items.map((item) => item.place_id).filter(Boolean),
       );
+      const removed = (constraints?.selectedStops ?? []).filter(
+        (stop) => !resultingPlaceIds.has(stop.id),
+      );
+      const changeSummary = removed.length
+        ? `Removed ${removed.map((stop) => stop.name).join(", ")} from this itinerary. `
+        : "";
       onMessages((previous) => [
         ...previous,
         { role: "user", text },
         {
           role: "assistant",
           text:
-            run.status === "feasible"
-              ? `Saved “${schedule.name}”. Review your places and any unscheduled activities.`
-              : `Saved “${schedule.name}”, including activities that still need planning. Review the conflicts in the itinerary.`,
+            changeSummary +
+            (run.status === "feasible"
+              ? `Draft “${schedule.name}” is ready. Review it, then choose Save schedule to keep it.`
+              : `Draft “${schedule.name}” includes activities that still need planning. Review the conflicts before saving.`),
         },
       ]);
       setDraft("");
       setConversation([]);
       requestId.current = null;
     } catch (err) {
-      // Keep the draft and request id so a retry is idempotent.
-      setError(err instanceof Error ? err.message : "Unable to save schedule.");
+      // Keep the prompt so the user can retry generation.
+      setError(
+        err instanceof Error ? err.message : "Unable to generate schedule.",
+      );
     } finally {
       sending.current = false;
       setPlanning(false);
@@ -188,7 +199,7 @@ export function TripChat({
       const data = await response.json();
       if (!response.ok)
         throw new Error(data.error?.message || "Unable to open this schedule.");
-      onSaved(data, null);
+      onSaved(data, null, true);
       setShowSaved(false);
       onMessages((previous) => [
         ...previous,
@@ -299,8 +310,8 @@ export function TripChat({
         <div ref={end} />
       </div>
       <p className="hint chat-constraints-note">
-        Selected stops and travel mode are required. General place requests
-        search within your route radius.
+        Required and locked stops are protected. Ask to remove optional stops in
+        chat. General place requests search within your route radius.
       </p>
       <form className="chat-composer" onSubmit={submit}>
         <textarea
@@ -331,7 +342,7 @@ export function TripChat({
           type="submit"
           disabled={!ready || busy || !draft.trim()}
           aria-label="Send message"
-          title="Generate and save schedule"
+          title="Generate a draft schedule"
         >
           <Icon name="send" size={15} />
         </button>

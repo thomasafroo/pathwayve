@@ -165,3 +165,181 @@ it("sends sidebar constraints separately and requires route-vs-specific classifi
     "required_sidebar_constraints take priority",
   );
 });
+
+async function editConstraints() {
+  const { planningConstraintsSchema } =
+    await import("@/types/planning-constraints");
+  return planningConstraintsSchema.parse({
+    origin: null,
+    destination: null,
+    transportation: "transit",
+    timeZone: "America/Vancouver",
+    selectedStops: [
+      {
+        id: "fleur",
+        name: "La Fleur d’Oranger",
+        category: "coffee",
+        location: { lat: 49.2, lng: -123.1 },
+        durationMinutes: 30,
+        locked: false,
+        priority: "optional",
+      },
+      {
+        id: "lima",
+        name: "LIMA CAFE DESSERT & COFFEE SHOP",
+        category: "coffee",
+        location: { lat: 49.2, lng: -123.12 },
+        durationMinutes: 30,
+        locked: false,
+        priority: "optional",
+      },
+      {
+        id: "kestrel",
+        name: "Kestrel Books",
+        category: "bookstore",
+        location: { lat: 49.2, lng: -123.13 },
+        durationMinutes: 45,
+        locked: false,
+        priority: "required",
+      },
+    ],
+    routingPriority: "fastest",
+    budget: "any",
+    activities: [],
+    interestTags: [],
+    preferences: "",
+  });
+}
+const removeFleur = {
+  clarification: null,
+  decisions: [
+    { stop_id: "fleur", action: "remove", reason: "User rejects this cafe." },
+    { stop_id: "lima", action: "keep", reason: "Unrelated optional choice." },
+    { stop_id: "kestrel", action: "keep", reason: "Required bookstore." },
+  ],
+};
+it.each([
+  "Remove L Fleurr",
+  "I actually don't want La Fluer d'Oranger, give me a place near Brekka and Kestrel",
+  "La Fleur is inconvenient; find a closer coffee shop",
+])(
+  "applies interpreted rejection even when itinerary generation omits removal IDs: %s",
+  async (prompt) => {
+    const constraints = await editConstraints();
+    generateContent
+      .mockResolvedValueOnce({ text: JSON.stringify(removeFleur) })
+      .mockResolvedValueOnce({
+        text: JSON.stringify({ ...scheduleIntent(), removed_stop_ids: [] }),
+      });
+    const result = await generateSchedule({ ...request, prompt, constraints });
+    expect(result.removed_stop_ids).toEqual(["fleur"]);
+    expect(
+      JSON.parse(generateContent.mock.calls[1][0].contents)
+        .confirmed_removed_stop_ids,
+    ).toEqual(["fleur"]);
+    const { enforceScheduleConstraints } =
+      await import("@/lib/schedule-constraints");
+    const enforced = enforceScheduleConstraints(result, constraints);
+    expect(
+      enforced.schedule_items
+        .filter((item) => item.selected_stop_id)
+        .map((item) => item.selected_stop_id),
+    ).toEqual(["lima", "kestrel"]);
+  },
+);
+it("asks for clarification instead of claiming a protected stop was removed", async () => {
+  const constraints = await editConstraints();
+  constraints.selectedStops[0].priority = "required";
+  generateContent.mockResolvedValueOnce({ text: JSON.stringify(removeFleur) });
+  const result = await generateSchedule({
+    ...request,
+    constraints,
+    prompt: "Remove Fleur",
+  });
+  expect(result.clarification).toContain("uncheck Required");
+  expect(generateContent).toHaveBeenCalledTimes(1);
+});
+it("rejects incomplete edit decisions instead of silently saving a no-op", async () => {
+  generateContent.mockResolvedValueOnce({
+    text: JSON.stringify({ clarification: null, decisions: [] }),
+  });
+  await expect(
+    generateSchedule({ ...request, constraints: await editConstraints() }),
+  ).rejects.toMatchObject({ code: "INCOMPLETE_STOP_EDITS" });
+});
+it("keeps unrelated optional stops despite conflicting removals from the itinerary stage", async () => {
+  generateContent
+    .mockResolvedValueOnce({
+      text: JSON.stringify({
+        ...removeFleur,
+        decisions: removeFleur.decisions.map((item) => ({
+          ...item,
+          action: "keep",
+        })),
+      }),
+    })
+    .mockResolvedValueOnce({
+      text: JSON.stringify({ ...scheduleIntent(), removed_stop_ids: ["lima"] }),
+    });
+  const result = await generateSchedule({
+    ...request,
+    constraints: await editConstraints(),
+    prompt: "Don't remove La Fleur, add a cake shop",
+  });
+  expect(result.removed_stop_ids).toEqual([]);
+});
+
+it.each([false, true])(
+  "uses sidebar rejection in the edit pass (required=%s)",
+  async (required) => {
+    const constraints = await editConstraints();
+    constraints.selectedStops[0].name = "Purebread bakery";
+    constraints.selectedStops[0].priority = required ? "required" : "optional";
+    constraints.preferences = "I don't like purebread bakery";
+    constraints.activities = ["bookstore"];
+    constraints.interestTags = ["Libraries"];
+    constraints.budget = "budget";
+    constraints.suggestionMode = "manual";
+    generateContent
+      .mockResolvedValueOnce({ text: JSON.stringify(removeFleur) })
+      .mockResolvedValueOnce({ text: JSON.stringify(scheduleIntent()) });
+    const result = await generateSchedule({
+      ...request,
+      constraints,
+      prompt: "Adapt to my new preferences on the side",
+    });
+    const editInput = JSON.parse(generateContent.mock.calls[0][0].contents);
+    expect(editInput.current_sidebar_preferences).toEqual({
+      notes: "I don't like purebread bakery",
+      activities: ["bookstore"],
+      interests: ["Libraries"],
+      budget: "budget",
+      suggestion_mode: "manual",
+      routing_priority: "fastest",
+    });
+    if (required) {
+      expect(result.clarification).toContain("Purebread bakery");
+      expect(result.clarification).toContain("uncheck Required");
+      expect(generateContent).toHaveBeenCalledTimes(1);
+    } else {
+      expect(result.removed_stop_ids).toEqual(["fleur"]);
+      const planningInput = JSON.parse(
+        generateContent.mock.calls[1][0].contents,
+      );
+      expect(planningInput.required_sidebar_constraints).toEqual(constraints);
+      const { enforceScheduleConstraints } =
+        await import("@/lib/schedule-constraints");
+      const plan = enforceScheduleConstraints(result, constraints);
+      expect(
+        plan.schedule_items.some((item) => item.selected_stop_id === "fleur"),
+      ).toBe(false);
+      expect(
+        plan.schedule_items.some((item) => item.selected_stop_id === "lima"),
+      ).toBe(true);
+      expect(plan.schedules[0].preferences.notes).toContain(
+        constraints.preferences,
+      );
+      expect(plan.schedules[0].preferences.budget).toBe("budget");
+    }
+  },
+);

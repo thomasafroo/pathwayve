@@ -25,6 +25,8 @@ import { PlaceSearch } from "./PlaceSearch";
 import type { CandidatePlace } from "@/types/trip";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
+  const [documentSaved, setDocumentSaved] = useState(false);
+  const saveAttempt = useRef<{ key: string; id: string } | null>(null);
   const tripForm = useRef<TripFormHandle>(null);
   const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -137,6 +139,79 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     } finally {
       setBusy(false);
     }
+  }
+  async function saveCurrent(useWorkspace = false) {
+    if (busy || (!state && !savedDocument)) return;
+    setBusy(true);
+    setError("");
+    const body =
+      useWorkspace && state
+        ? { workspace: state }
+        : { document: savedDocument };
+    const key = JSON.stringify(body);
+    if (saveAttempt.current?.key !== key)
+      saveAttempt.current = { key, id: crypto.randomUUID() };
+    try {
+      const response = await fetch("/api/schedules/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, requestId: saveAttempt.current.id }),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error?.message ?? "Unable to save schedule.");
+      setSavedDocument(data);
+      setDocumentSaved(true);
+      setMessage("Schedule saved. Further edits can be saved as a new copy.");
+      window.dispatchEvent(new Event("schedules-changed"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save schedule.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function deleteCurrent() {
+    if (!savedDocument || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/schedules/${savedDocument.schedules[0].id}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) throw new Error("Unable to delete this schedule.");
+      setSavedDocument(null);
+      setDocumentSaved(false);
+      setMessage("Saved schedule deleted. Your working route is unchanged.");
+      window.dispatchEvent(new Event("schedules-changed"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function importSchedule() {
+    const run = savedDocument?.schedule_runs[0];
+    const storedTrip = run?.result.map_trip;
+    if (!storedTrip || !savedDocument || busy) return;
+    const snapshot = {
+      ...storedTrip,
+      request: {
+        ...storedTrip.request,
+        interestTags:
+          storedTrip.request.interestTags ??
+          savedDocument.schedules[0].preferences.interests,
+      },
+    };
+    const workspace =
+      run.result.workspace_snapshot ?? createWorkspace(snapshot);
+    commit({ ...workspace, trip: { ...snapshot, id: crypto.randomUUID() } });
+    tripForm.current?.importTrip(snapshot);
+    setMessage(
+      "Places imported as a new working trip. Adjust dates and preferences on the left; save when ready.",
+    );
+    setSavedDocument(null);
+    setDocumentSaved(false);
   }
   function undo() {
     const previous = history.at(-1);
@@ -303,7 +378,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               getConstraints={() => tripForm.current?.getConstraints() ?? null}
               busy={busy}
               onBusy={setBusy}
-              onSaved={(document, workspace) => {
+              onSaved={(document, workspace, persisted = false) => {
+                setDocumentSaved(persisted);
                 setSavedDocument(document);
                 setState(workspace);
                 setHistory([]);
@@ -375,6 +451,11 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
             <div className="itinerary-scroll">
               <SavedSchedule
                 document={savedDocument}
+                persisted={documentSaved}
+                onImport={importSchedule}
+                onSave={() => void saveCurrent()}
+                onDelete={() => void deleteCurrent()}
+                busy={busy}
                 onClose={() => setSavedDocument(null)}
               />
             </div>
@@ -402,6 +483,11 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               {savedDocument && (
                 <SavedSchedule
                   document={savedDocument}
+                  persisted={documentSaved}
+                  onImport={importSchedule}
+                  onSave={() => void saveCurrent()}
+                  onDelete={() => void deleteCurrent()}
+                  busy={busy}
                   showRoute={false}
                   onClose={() => setSavedDocument(null)}
                 />
@@ -432,6 +518,13 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                 }}
                 busy={busy}
               />
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() => void saveCurrent(true)}
+              >
+                Save current trip
+              </button>
               <div className="trip-toolbar">
                 <button
                   className="secondary"
