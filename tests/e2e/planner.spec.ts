@@ -4,17 +4,18 @@ test("plan a day and replan while preserving a locked stop", async ({
 }, testInfo) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
+  await expect(page.getByRole("heading", { name: "Plan trip" })).toBeVisible();
+  await page
+    .getByRole("button", { name: /Create itinerary|Update route/ })
+    .click();
   await expect(
-    page.getByRole("heading", { name: "Make a day of it." }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Plan my day" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Your itinerary" }),
+    page.getByRole("heading", { name: "Itinerary", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".stop")).toHaveCount(4);
   await page
     .getByRole("button", { name: "Lock The Morning Cup", exact: true })
     .click();
+  await page.getByText("Weather and trip updates", { exact: true }).click();
   await page.getByRole("button", { name: "Rain starts early" }).click();
   await expect(page.getByRole("status")).toContainText(
     "Demo rain event applied",
@@ -38,13 +39,15 @@ test("shows server validation errors without replacing a previous plan", async (
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page.getByRole("button", { name: "Plan my day" }).click();
+  await page
+    .getByRole("button", { name: /Create itinerary|Update route/ })
+    .click();
   await expect(page.locator(".stop")).toHaveCount(4);
-  await page.getByRole("tab", { name: "Plan a trip" }).click();
-  await page.locator(".schedule-options > summary").click();
   await page.getByLabel("Departure", { exact: true }).fill("2030-10-03T13:00");
   await page.getByLabel("Finish by", { exact: true }).fill("2030-10-03T12:00");
-  await page.getByRole("button", { name: "Plan my day" }).click();
+  await page
+    .getByRole("button", { name: /Create itinerary|Update route/ })
+    .click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "End time must be after departure",
   );
@@ -59,7 +62,9 @@ test("edit a trip, attach an activity, undo, and export JSON", async ({
   await expect(
     page.getByRole("region", { name: "Trip map", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Plan my day" }).click();
+  await page
+    .getByRole("button", { name: /Create itinerary|Update route/ })
+    .click();
   await expect(page.locator(".stop")).toHaveCount(4);
   const coffee = page.locator(".stop").filter({
     has: page.getByRole("heading", { name: "The Morning Cup", exact: true }),
@@ -89,7 +94,10 @@ test("edit a trip, attach an activity, undo, and export JSON", async ({
   await expect(coffee.getByLabel("Duration for The Morning Cup")).toHaveValue(
     "45",
   );
-  await page.getByRole("button", { name: "Add stop", exact: true }).click();
+  await page
+    .locator(".itinerary-panel")
+    .getByRole("button", { name: "Add stop", exact: true })
+    .click();
   await page.getByRole("button", { name: /Neighbourhood Market/ }).click();
   await expect(page.locator(".stop")).toHaveCount(5);
   await expect(page.locator(".chosen-stops>div")).toHaveCount(5);
@@ -129,7 +137,9 @@ test("a rejected edit preserves the plan and dialogs support Escape", async ({
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page.getByRole("button", { name: "Plan my day" }).click();
+  await page
+    .getByRole("button", { name: /Create itinerary|Update route/ })
+    .click();
   await expect(page.locator(".stop")).toHaveCount(4);
   await page
     .getByRole("button", { name: "Lock Harbour Green Break", exact: true })
@@ -141,12 +151,17 @@ test("a rejected edit preserves the plan and dialogs support Escape", async ({
     "locked stop",
   );
   await expect(page.locator(".stop")).toHaveCount(4);
-  await page.getByRole("button", { name: "Add stop", exact: true }).click();
+  await page
+    .locator(".itinerary-panel")
+    .getByRole("button", { name: "Add stop", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Add stop", exact: true }),
+    page
+      .locator(".itinerary-panel")
+      .getByRole("button", { name: "Add stop", exact: true }),
   ).toBeFocused();
 });
 
@@ -210,7 +225,7 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
     .getByRole("button", { name: "Search", exact: true })
     .click();
   await page.getByRole("button", { name: /Community Centre/ }).click();
-  await page.getByRole("button", { name: "Find a place to visit" }).click();
+  await page.getByRole("button", { name: "Add stop", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Search optional stops", exact: true })
     .fill("cafes");
@@ -235,7 +250,9 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
   const requestEvent = page.waitForRequest((r) =>
     r.url().endsWith("/api/plan"),
   );
-  await page.getByRole("button", { name: "Plan my day" }).click();
+  await page
+    .getByRole("button", { name: /Create itinerary|Update route/ })
+    .click();
   const request = (await requestEvent).postDataJSON();
   expect(request.origin.name).toBe("Library entrance");
   expect(request.destination.name).toBe("Community Centre");
@@ -250,32 +267,75 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
   await expect(page.locator(".stop")).toContainText("Sunset Cafe");
 });
 
-test("desktop map stays visible and the assistant preserves a local brief", async ({
+test("four planner states keep chat messages and resize when the itinerary opens", async ({
   page,
 }, testInfo) => {
+  await page.route("**/api/schedules", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: [] })
+      : route.fulfill({
+          json: { clarification: "Which day should I plan lunch for?" },
+        }),
+  );
+  await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/");
   const map = page.getByRole("region", { name: "Trip map", exact: true });
-  const bounds = await map.boundingBox();
-  expect(bounds!.height).toBe(page.viewportSize()!.height);
-  expect(bounds!.width).toBeGreaterThan(700);
-  await page.screenshot({ path: testInfo.outputPath("desktop-workspace.png") });
-  await page.getByRole("button", { name: "Open AI companion" }).click();
-  await expect(page.getByText("AI preview · Not connected")).toBeVisible();
-  await page
-    .getByRole("button", { name: "Find a quiet café along my route" })
-    .click();
-  await page
-    .getByRole("button", { name: "Save brief for this session" })
-    .click();
-  await expect(
-    page.getByText("Saved: Find a quiet café along my route"),
-  ).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("desktop-assistant.png") });
-  await page.getByRole("button", { name: "Close AI companion" }).click();
-  await page.getByRole("button", { name: "Open AI companion" }).click();
-  await expect(page.getByLabel("Your trip brief")).toHaveValue(
-    "Find a quiet café along my route",
+  expect((await map.boundingBox())!.width).toBe(1104);
+  await expect(page.getByLabel("Itinerary panel", { exact: true })).toHaveCount(
+    0,
   );
+  await page.screenshot({ path: testInfo.outputPath("01-planner.png") });
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  const chat = page.getByRole("region", { name: "Trip chat", exact: true });
+  expect((await chat.boundingBox())!.width).toBe(360);
+  await page.getByLabel("Chat message").fill("Leave time for lunch");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(chat).toContainText("Leave time for lunch");
+  await expect(chat).toContainText("Which day should I plan lunch for?");
+  await page.screenshot({ path: testInfo.outputPath("02-chat.png") });
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  await page.getByRole("button", { name: "Create itinerary" }).click();
+  await expect(page.locator(".stop")).toHaveCount(4);
+  await expect(chat).toHaveClass(/compact/);
+  await expect.poll(async () => (await chat.boundingBox())!.width).toBe(280);
+  expect((await map.boundingBox())!.width).toBe(720);
+  await page.screenshot({ path: testInfo.outputPath("04-itinerary-chat.png") });
+  await page.getByRole("button", { name: "Close chat panel" }).click();
+  await expect(chat).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("03-itinerary.png") });
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  await expect(chat).toContainText("Leave time for lunch");
+  await page
+    .getByRole("button", { name: "Close itinerary", exact: true })
+    .click();
+  await expect(chat).not.toHaveClass(/compact/);
+  await page.getByLabel("Chat message").press("Escape");
+  await expect(
+    page.getByRole("button", { name: "Open trip chat" }),
+  ).toBeFocused();
+});
+
+test("mobile planner remains usable with chat and itinerary", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load sample trip" }).click();
+  await page.getByRole("button", { name: "Create itinerary" }).click();
+  await expect(page.locator(".stop")).toHaveCount(4);
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  await expect(
+    page.getByRole("region", { name: "Trip chat", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("mobile.png"),
+    fullPage: true,
+  });
 });
 
 test("location tracking is opt-in, receives movement, and stops listening", async ({
@@ -376,7 +436,9 @@ test("denied location permission leaves the trip planner usable", async ({
     0,
   );
   await page.getByRole("button", { name: "Load sample trip" }).click();
-  await page.getByRole("button", { name: "Plan my day" }).click();
+  await page
+    .getByRole("button", { name: /Create itinerary|Update route/ })
+    .click();
   await expect(page.locator(".stop")).toHaveCount(4);
 });
 
@@ -512,6 +574,6 @@ test("late suggestions cannot replace a newer query or reopen after dismissal", 
   await expect(
     page.getByRole("option", { name: "latest place Vancouver" }),
   ).toBeVisible();
-  await page.getByRole("heading", { name: "Make a day of it." }).click();
+  await page.getByRole("heading", { name: "Plan trip" }).click();
   await expect(page.getByRole("listbox")).toHaveCount(0);
 });

@@ -1062,6 +1062,7 @@ input[type="checkbox"] {
   line-height: 1.15;
   margin-top: 6px;
   color: var(--ink);
+  text-wrap: balance;
 }
 .weather-advice {
   margin-top: 12px;

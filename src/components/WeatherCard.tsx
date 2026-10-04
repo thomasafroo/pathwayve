@@ -39,8 +39,21 @@ function warmthLabel(warmth: BringAdvice["warmth"]) {
 }
 
 function bringTitle(advice: BringAdvice) {
-  return [warmthLabel(advice.warmth), ...advice.accessories.map(accessoryLabel)]
-    .filter((item, index, items) => items.indexOf(item) === index)
+  const items = [warmthLabel(advice.warmth)];
+  if (advice.precipitation === "snow_gear") items.push("snow gear");
+  else if (advice.precipitation === "rain_gear") items.push("rain gear");
+  else if (advice.accessories.includes("umbrella")) items.push("umbrella");
+
+  if (
+    advice.accessories.includes("gloves") &&
+    !advice.accessories.includes("hat") &&
+    advice.precipitation !== "snow_gear"
+  )
+    items.push("gloves");
+  if (advice.accessories.includes("hat")) items.push("hat + gloves");
+
+  return items
+    .filter((item, index, allItems) => allItems.indexOf(item) === index)
     .join(" + ");
 }
 

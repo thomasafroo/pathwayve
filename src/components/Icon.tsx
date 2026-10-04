@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import Image from "next/image";
 
 const paths = {
   search: "M21 21l-6-6M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z",
@@ -37,7 +38,22 @@ const paths = {
   undo: "m9 3-6 6 6 6M3 9h10a7 7 0 0 1 0 14",
   layers: "m12 3 10 6-10 6L2 9l10-6Zm-10 12 10 6 10-6M2 12l10 6 10-6",
 } as const;
-export type IconName = keyof typeof paths;
+const designIcons = [
+  "chat",
+  "send",
+  "fit",
+  "route",
+  "pin",
+  "clock",
+  "transit",
+  "walking",
+  "driving",
+  "plus",
+  "search",
+  "close",
+  "check",
+] as const;
+export type IconName = keyof typeof paths | "chat" | "send" | "fit";
 export function Icon({
   name,
   size = 20,
@@ -47,6 +63,19 @@ export function Icon({
   size?: number;
   style?: CSSProperties;
 }) {
+  if ((designIcons as readonly string[]).includes(name)) {
+    return (
+      <Image
+        src={`/design/${name}.svg`}
+        alt=""
+        aria-hidden="true"
+        width={size}
+        height={size}
+        className="design-icon"
+        style={style}
+      />
+    );
+  }
   return (
     <svg
       width={size}
@@ -60,7 +89,7 @@ export function Icon({
       aria-hidden="true"
       style={style}
     >
-      <path d={paths[name]} />
+      <path d={paths[name as keyof typeof paths]} />
     </svg>
   );
 }

@@ -56,7 +56,7 @@ export function distanceMeters(a: Location, b: Location) {
       Math.sin(((b.lng - a.lng) * rad) / 2) ** 2;
   return Math.round(6371000 * 2 * Math.asin(Math.sqrt(Math.min(1, value))));
 }
-async function computeLeg(
+export async function computeLeg(
   from: TripRequest["origin"],
   to: TripRequest["destination"],
   request: TripRequest,

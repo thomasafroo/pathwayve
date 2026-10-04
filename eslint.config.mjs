@@ -6,6 +6,8 @@ export default defineConfig([
   ...nextTs,
   globalIgnores([
     ".next/**",
+    ".next-e2e/**",
+    ".next-preview/**",
     "out/**",
     "next-env.d.ts",
     "coverage/**",

@@ -29,7 +29,9 @@ export function TripForm({
   onPlan,
   mode = "demo",
   currentTrip,
+  pendingPlace,
 }: {
+  pendingPlace?: CandidatePlace | null;
   currentTrip: TripState | null;
   mode?: "demo" | "live";
   busy: boolean;
@@ -62,6 +64,21 @@ export function TripForm({
     "manual",
   );
   const [syncedTrip, setSyncedTrip] = useState(currentTrip);
+  const [consumedPlace, setConsumedPlace] = useState(pendingPlace);
+  if (pendingPlace && pendingPlace !== consumedPlace) {
+    setConsumedPlace(pendingPlace);
+    if (selected.length >= 6) setError("Choose up to six stops.");
+    else if (!selected.some((p) => p.id === pendingPlace.id))
+      setSelected([
+        ...selected,
+        {
+          ...pendingPlace,
+          durationMinutes: 30,
+          locked: false,
+          priority: "required",
+        },
+      ]);
+  }
   if (currentTrip !== syncedTrip) {
     setSyncedTrip(currentTrip);
     if (currentTrip) {
@@ -130,9 +147,8 @@ export function TripForm({
     <form id="trip-planner-form" onSubmit={submit} className="trip-form">
       <fieldset disabled={busy}>
         <div className="form-heading">
-          <span className="eyebrow">A DAY THAT GOES YOUR WAY</span>
-          <h2>Make a day of it.</h2>
-          <p>Start anywhere. Add the places you love. Find your way.</p>
+          <h1>Plan trip</h1>
+          <p>Choose your route and stops.</p>
         </div>
         <div className="endpoint-fields">
           {(["origin", "destination"] as const).map((kind) => {
@@ -203,7 +219,7 @@ export function TripForm({
         >
           Load sample trip
         </button>
-        <p className="field-heading">How do you want to get there?</p>
+        <p className="field-heading">Travel mode</p>
         <div
           className="transport-options"
           role="group"
@@ -225,11 +241,7 @@ export function TripForm({
             </button>
           ))}
         </div>
-        <details className="preference-details schedule-options">
-          <summary>
-            <Icon name="clock" size={15} /> Time & route options{" "}
-            <span>Change times</span>
-          </summary>
+        <div className="schedule-options">
           <label>
             Route priority
             <select name="priority" key={transportation} defaultValue="fastest">
@@ -261,13 +273,12 @@ export function TripForm({
             </label>
           </div>
           <p id="time-help" className="hint">
-            Defaults to now until the end of today. Choose both dates for a
-            longer trip (up to 31 days). Times use your device’s timezone.
+            Leave blank for today. Times are local.
           </p>
-        </details>
+        </div>
         <div className="form-divider" />
         <div className="selected-stops-heading">
-          <p className="field-heading">Places I want to visit</p>
+          <p className="field-heading">Selected stops</p>
           <span>{selected.length}/6</span>
         </div>
         <div className="chosen-stops">
@@ -308,19 +319,14 @@ export function TripForm({
             </div>
           ))}
         </div>
-        {!selected.length && (
-          <p className="hint">
-            No stops selected. You can go straight to your destination or choose
-            stops below.
-          </p>
-        )}
+        {!selected.length && <p className="hint">No stops selected.</p>}
         <button
           type="button"
           className="secondary"
           onClick={() => setFindStops(!findStops)}
         >
           <Icon name="plus" size={15} />
-          {findStops ? "Hide place search" : "Find a place to visit"}
+          {findStops ? "Close place search" : "Add stop"}
         </button>
         {findStops && (
           <PlaceSearch
@@ -377,10 +383,6 @@ export function TripForm({
               <option value="suggest">I’m open to suggestions</option>
             </select>
           </label>
-          <p className="hint">
-            Suggestions are yours to approve. Future Gemini suggestions will use
-            these preferences; nothing is added automatically.
-          </p>
           <details className="preference-details">
             <summary>Interests & budget</summary>
             <p className="field-heading">What sounds good?</p>
@@ -468,10 +470,6 @@ export function TripForm({
             {error}
           </p>
         )}
-
-        <p className="form-footnote">
-          Your selected places stay in your chosen order.
-        </p>
       </fieldset>
     </form>
   );

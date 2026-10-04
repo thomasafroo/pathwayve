@@ -2,6 +2,7 @@ import type { WorkspaceTrip, TripModification } from "@/types/workspace";
 import { toSchedule } from "@/lib/trip-workspace";
 import { StopCard, formatTime } from "./StopCard";
 import { Icon } from "./Icon";
+import { TravelLeg } from "./TravelLeg";
 export function Itinerary({
   state,
   selectedId,
@@ -29,9 +30,8 @@ export function Itinerary({
     >
       <div className="section-heading">
         <div>
-          <p className="eyebrow">THE DAY, UNFOLDED</p>
           <h2 id="itinerary-heading">
-            Your itinerary
+            Stops
             <span className="count-badge">{trip.stops.length} stops</span>
           </h2>
         </div>
@@ -75,45 +75,11 @@ export function Itinerary({
           switch (item.type) {
             case "TRANSIT":
               return (
-                <li key={item.id} className="travel-leg">
-                  <Icon name={trip.request.transportation} size={15} />
-                  <span>
-                    {Math.round(item.leg.durationMinutes)} min{" "}
-                    {trip.request.transportation === "transit"
-                      ? "on transit"
-                      : trip.request.transportation === "walking"
-                        ? "walk"
-                        : "drive"}
-                  </span>
-                  <span className="travel-distance">
-                    {(item.leg.distanceMeters / 1000).toFixed(1)} km
-                  </span>
-                  {!!item.leg.steps?.length && (
-                    <details className="route-directions">
-                      <summary>View directions</summary>
-                      <ol>
-                        {item.leg.steps.map((step, index) => (
-                          <li key={index}>
-                            <strong>
-                              {step.mode === "TRANSIT"
-                                ? (step.line ?? "Transit")
-                                : step.mode === "WALK"
-                                  ? "Walk"
-                                  : "Drive"}
-                            </strong>{" "}
-                            {step.instruction}
-                            {step.durationMinutes > 0
-                              ? ` · ${step.durationMinutes} min`
-                              : ""}
-                          </li>
-                        ))}
-                      </ol>
-                      {item.leg.warnings?.map((warning) => (
-                        <p key={warning}>{warning}</p>
-                      ))}
-                    </details>
-                  )}
-                </li>
+                <TravelLeg
+                  key={item.id}
+                  leg={item.leg}
+                  mode={trip.request.transportation}
+                />
               );
             case "PLACE":
               return (
@@ -145,11 +111,11 @@ export function Itinerary({
           <strong>{trip.request.destination.name}</strong>
           <span>Arrive around {formatTime(trip.arrivalTime)}</span>
         </div>
-        <span className="endpoint-label">YOU MADE IT</span>
+        <span className="endpoint-label">END</span>
       </div>
       {!trip.stops.length && (
         <p className="hint">
-          Just the journey for now. Add a stop to make it your own.
+          Direct route. Add a stop to make time for a visit.
         </p>
       )}
       <p className="timeline-footnote">
