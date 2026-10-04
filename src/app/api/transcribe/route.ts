@@ -1,3 +1,4 @@
+import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import { z } from "zod";
 import { AppError, handleApi } from "@/lib/server/http";
 
@@ -20,10 +21,6 @@ export async function POST(request: Request) {
         413,
       );
 
-    const body = new FormData();
-    body.append("file", audio, audio.name || "voice.webm");
-    body.append("model_id", "scribe_v2");
-
     const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
     if (!apiKey)
       throw new AppError(
@@ -32,24 +29,20 @@ export async function POST(request: Request) {
         503,
       );
 
-    const response = await fetch(
-      "https://api.elevenlabs.io/v1/speech-to-text",
-      {
-        method: "POST",
-        headers: { "xi-api-key": apiKey },
-        body,
-        signal: AbortSignal.timeout(60_000),
-        cache: "no-store",
-      },
-    );
-
-    if (!response.ok)
+    try {
+      const client = new ElevenLabsClient({ apiKey });
+      return transcriptSchema.parse(
+        await client.speechToText.convert({
+          file: audio,
+          modelId: "scribe_v2",
+        }),
+      );
+    } catch {
       throw new AppError(
         "TRANSCRIPTION_FAILED",
         "ElevenLabs could not transcribe this recording. Try again.",
         502,
       );
-
-    return transcriptSchema.parse(await response.json());
+    }
   });
 }
