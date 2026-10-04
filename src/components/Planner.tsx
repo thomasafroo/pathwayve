@@ -480,10 +480,12 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                 </div>
               </div>
               <WeatherCard weather={trip.weather} advice={trip.bringAdvice} />
-              <details className="itinerary-extras">
-                <summary>Trip updates</summary>
-                <ReplanControls trip={trip} busy={busy} onReplan={onReplan} />
-              </details>
+              {trip.source === "demo" && (
+                <details className="itinerary-extras">
+                  <summary>Trip updates</summary>
+                  <ReplanControls trip={trip} busy={busy} onReplan={onReplan} />
+                </details>
+              )}
               <details className="data-note">
                 <summary>Route information</summary>
                 {trip.warnings.map((warning) => (
