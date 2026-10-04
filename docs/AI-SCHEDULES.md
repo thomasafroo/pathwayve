@@ -1,13 +1,13 @@
 # Prompt → Gemini JSON → SQL
 
-The bottom-centered composer sends a prompt to `POST /api/schedules`. It generates
-a **new schedule**, even if an existing manual trip supplies context. Saved
-schedules can be opened from the composer after refresh in the same browser.
+The composer sends a prompt to `POST /api/schedules/preview`. It generates a
+new preview, even if an existing manual trip supplies context. **Save schedule**
+separately saves it to the authenticated user's account. See [authentication](AUTH.md).
 
 ## Pipeline
 
 1. Validate the prompt (up to 4,000 characters), timezone, request UUID, and optional
-   current trip context. Identify the browser through an HttpOnly session cookie.
+   current trip context. Previewing does not require an account.
 2. Ask Gemini for JSON matching `generatedScheduleSchema`. The model returns a
    schedule and activity intentions, or a clarification question if endpoints
    are missing. It never produces executable SQL.
@@ -16,12 +16,13 @@ schedules can be opened from the composer after refresh in the same browser.
    remains authoritative.
 4. Resolve endpoint/activity search queries through Places. Compute route legs,
    allow waiting before appointments, check time windows and the final destination.
-5. Assign server-generated UUIDs, ownership, versions, and timestamps. Classify
-   every activity as placed or unscheduled. Preserve all activities in the save.
-6. Insert the schedule, items, and run in **one parameterized SQL transaction**.
+5. Assign preview UUIDs, versions, and timestamps. Classify every activity as placed
+   or unscheduled. Display the preview without writing to the database.
+6. When Save is pressed, authenticate, assign ownership and fresh IDs, and insert
+   the schedule, items, run, and optional workspace in one parameterized transaction.
    The browser's request UUID prevents duplicate saves when the same request is
    retried. Model/network failures before save do not leave partial rows.
-7. Display the saved result. Flexible visit-only feasible plans also populate the
+7. Display the result. Flexible visit-only feasible plans also populate the
    existing map/itinerary workspace. Fixed appointments and standalone tasks use
    the saved details view because the older workspace cannot represent all their
    constraints safely.
@@ -42,8 +43,8 @@ schedules can be opened from the composer after refresh in the same browser.
   `pathwayve.schedule_runs`. The migration includes foreign keys, CHECK constraints,
   uniqueness constraints, and indexes. Preferences, requirements, and run results
   are JSONB; searchable identity/timing/priority fields are normal columns.
-- `user_id` is derived on the server from the session, never accepted from Gemini
-  or a client JSON document. This is anonymous browser ownership, not account login.
+- `user_id` comes from the verified Better Auth session, never from Gemini or a
+  client JSON document. It references `public.auth_users.id`.
 - `request_id` is a database-only idempotency field. `place_query` is retained on
   saved items to preserve unresolved intent.
 
@@ -80,20 +81,20 @@ required TLS configuration; certificate verification is not disabled by the app.
 
 ## Endpoints
 
-| Endpoint                 | Purpose                                                                   |
-| ------------------------ | ------------------------------------------------------------------------- |
-| `POST /api/schedules`    | Prompt + `timeZone` + `requestId` + optional `context`; generate and save |
-| `GET /api/schedules`     | Latest 30 schedule summaries belonging to the current browser             |
-| `GET /api/schedules/:id` | Read the saved JSON document for an owned schedule                        |
+| Endpoint                      | Purpose                                                 |
+| ----------------------------- | ------------------------------------------------------- |
+| `POST /api/schedules/preview` | Prompt + timezone + optional context; public preview    |
+| `POST /api/schedules`         | Authenticated explicit snapshot save                    |
+| `GET /api/schedules`          | Latest 30 summaries belonging to the authenticated user |
+| `GET /api/schedules/:id`      | Owned `{document, workspace}` snapshot                  |
 
 ## Current boundaries
 
-- The anonymous cookie expires after 30 days. Clearing it or switching browsers
-  loses access to that browser's saves; add account authentication for long-term,
-  cross-device reuse. Paid public endpoints still need shared rate limiting.
+- Google login enables cross-device access to private saves. Public paid endpoints
+  still need deployment-level shared rate limiting.
 - Reopening reads the saved calculation; it does not refresh routes, run Gemini,
   or rebase appointments onto a new day. Ask for a new schedule to calculate again.
-- Manual workspace edits do not write back to saved SQL snapshots.
+- Manual workspace edits require pressing Save again to create a new snapshot.
 - Tasks without a place remain unscheduled. Requested quietness/wifi/seating is
   not inferred from Places results. Task placement inside existing visits is future work.
 - Place matching selects the first search result, which users must review. It is

@@ -1,5 +1,5 @@
 import { loadEnvConfig } from "@next/env";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import pg from "pg";
 loadEnvConfig(process.cwd());
 const url = process.env.DATABASE_URL || process.env.TIGER_DATABASE_URL;
@@ -15,9 +15,11 @@ if (!url) {
   try {
     await client.connect();
     await client.query("BEGIN");
-    await client.query(
-      await readFile("db/migrations/001_schedules.sql", "utf8"),
-    );
+    for (const file of (await readdir("db/migrations"))
+      .filter((f) => f.endsWith(".sql"))
+      .sort()) {
+      await client.query(await readFile(`db/migrations/${file}`, "utf8"));
+    }
     await client.query("COMMIT");
     console.log("PathWayve schedule tables are ready.");
   } catch {

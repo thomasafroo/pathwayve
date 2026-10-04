@@ -24,6 +24,13 @@ const tags = [
   "Family activities",
   "Nightlife",
 ];
+function localInputTime(iso?: string) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+}
 export function TripForm({
   busy,
   onPlan,
@@ -37,31 +44,40 @@ export function TripForm({
   busy: boolean;
   onPlan: (request: TripRequest) => Promise<void>;
 }) {
-  const [origin, setOrigin] = useState<TripRequest["origin"] | null>(null),
+  const [origin, setOrigin] = useState<TripRequest["origin"] | null>(
+      currentTrip?.request.origin ?? null,
+    ),
     [destination, setDestination] = useState<TripRequest["destination"] | null>(
-      null,
+      currentTrip?.request.destination ?? null,
     );
   const [editing, setEditing] = useState<"origin" | "destination" | null>(
-    "origin",
+    currentTrip ? null : "origin",
   );
-  const [activities, setActivities] = useState<TripRequest["activities"]>([
-    "coffee",
-    "park",
-    "bookstore",
-    "food",
-  ]);
-  const [transportation, setTransportation] =
-    useState<TripRequest["transportation"]>("transit");
+  const [activities, setActivities] = useState<TripRequest["activities"]>(
+    currentTrip?.request.activities ?? ["coffee", "park", "bookstore", "food"],
+  );
+  const [transportation, setTransportation] = useState<
+    TripRequest["transportation"]
+  >(currentTrip?.request.transportation ?? "transit");
   const [selected, setSelected] = useState<
     NonNullable<TripRequest["selectedStops"]>
-  >([]);
+  >(
+    currentTrip?.stops.map((stop) => ({
+      ...stop,
+      priority: stop.priority ?? "optional",
+    })) ?? [],
+  );
   const [favorites, setFavorites] = useState<CandidatePlace[]>([]);
-  const [interests, setInterests] = useState<string[]>([]);
-  const [budget, setBudget] = useState("any");
+  const [interests, setInterests] = useState<string[]>(
+    currentTrip?.request.interestTags ?? [],
+  );
+  const [budget, setBudget] = useState<string>(
+    currentTrip?.request.budget ?? "any",
+  );
   const [error, setError] = useState("");
   const [findStops, setFindStops] = useState(false);
   const [suggestionMode, setSuggestionMode] = useState<"manual" | "suggest">(
-    "manual",
+    currentTrip?.request.suggestionMode ?? "manual",
   );
   const [syncedTrip, setSyncedTrip] = useState(currentTrip);
   const [consumedPlace, setConsumedPlace] = useState(pendingPlace);
@@ -244,7 +260,11 @@ export function TripForm({
         <div className="schedule-options">
           <label>
             Route priority
-            <select name="priority" key={transportation} defaultValue="fastest">
+            <select
+              name="priority"
+              key={transportation}
+              defaultValue={currentTrip?.request.routingPriority ?? "fastest"}
+            >
               <option value="fastest">Fastest available route</option>
               {transportation === "transit" && (
                 <>
@@ -260,6 +280,7 @@ export function TripForm({
               <input
                 aria-describedby="time-help"
                 name="start"
+                defaultValue={localInputTime(currentTrip?.request.startTime)}
                 type="datetime-local"
               />
             </label>
@@ -268,6 +289,7 @@ export function TripForm({
               <input
                 aria-describedby="time-help"
                 name="end"
+                defaultValue={localInputTime(currentTrip?.request.endTime)}
                 type="datetime-local"
               />
             </label>
@@ -459,6 +481,7 @@ export function TripForm({
             Anything else?
             <textarea
               name="preferences"
+              defaultValue={currentTrip?.request.preferences ?? ""}
               maxLength={1000}
               rows={3}
               placeholder="Quiet places, vegetarian food, avoid crowds…"

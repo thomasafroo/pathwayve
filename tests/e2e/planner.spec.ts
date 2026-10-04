@@ -270,7 +270,7 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
 test("four planner states keep chat messages and resize when the itinerary opens", async ({
   page,
 }, testInfo) => {
-  await page.route("**/api/schedules", (route) =>
+  await page.route("**/api/schedules/preview", (route) =>
     route.request().method() === "GET"
       ? route.fulfill({ json: [] })
       : route.fulfill({
@@ -287,7 +287,9 @@ test("four planner states keep chat messages and resize when the itinerary opens
   await page.screenshot({ path: testInfo.outputPath("01-planner.png") });
   await page.getByRole("button", { name: "Open trip chat" }).click();
   const chat = page.getByRole("region", { name: "Trip chat", exact: true });
-  expect((await chat.boundingBox())!.width).toBe(360);
+  expect((await chat.boundingBox())!.width).toBe(
+    (await map.boundingBox())!.width - 32,
+  );
   await page.getByLabel("Chat message").fill("Leave time for lunch");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(chat).toContainText("Leave time for lunch");
@@ -297,7 +299,7 @@ test("four planner states keep chat messages and resize when the itinerary opens
   await page.getByRole("button", { name: "Create itinerary" }).click();
   await expect(page.locator(".stop")).toHaveCount(4);
   await expect(chat).toHaveClass(/compact/);
-  await expect.poll(async () => (await chat.boundingBox())!.width).toBe(280);
+  await expect.poll(async () => (await chat.boundingBox())!.width).toBe(688);
   expect((await map.boundingBox())!.width).toBe(720);
   await page.screenshot({ path: testInfo.outputPath("04-itinerary-chat.png") });
   await page.getByRole("button", { name: "Close chat panel" }).click();
@@ -327,11 +329,12 @@ test("mobile planner remains usable with chat and itinerary", async ({
   await expect(
     page.getByRole("region", { name: "Trip chat", exact: true }),
   ).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  // The itinerary animates in; measure the settled responsive layout.
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
   await page.screenshot({
     path: testInfo.outputPath("mobile.png"),
     fullPage: true,
