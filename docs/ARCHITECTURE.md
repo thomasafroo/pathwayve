@@ -53,7 +53,7 @@ there is no automatic comparison across modes or worldwide optimum guarantee.
 Trips and favourites are not persisted. Version checks are relative to the
 submitted workspace, not an authoritative database. Add authentication and a
 shared rate limiter before publicly deploying paid endpoints. Weather is advisory
-Open-Meteo data when explicitly enabled. Bring advice is deterministic clothing
+Google Weather API data, on when the Maps server key is configured. Bring advice is deterministic clothing
 and accessory classification from weather facts, not AI-generated guidance.
 Weather-aware route optimization, real-time TransLink, conversational
 interpretation, and AI execution are not implemented.

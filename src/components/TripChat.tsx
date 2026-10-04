@@ -6,14 +6,16 @@ import type { ScheduleDocument } from "@/types/schedule";
 import { Icon } from "./Icon";
 import type { CalendarSelection } from "@/types/calendar";
 
+import type { PlanningConstraints } from "@/types/planning-constraints";
+
 export type ChatMessage = { role: "user" | "assistant"; text: string };
-type SavedSummary = { id: string; name: string; status: string };
 
 export function TripChat({
   compact,
   messages,
   onMessages,
   context,
+  getConstraints,
   busy,
   onBusy,
   onSaved,
@@ -25,6 +27,7 @@ export function TripChat({
   messages: ChatMessage[];
   onMessages: (update: (previous: ChatMessage[]) => ChatMessage[]) => void;
   context: TripRequest | null;
+  getConstraints: () => PlanningConstraints | null;
   busy: boolean;
   onBusy: (busy: boolean) => void;
   onSaved: (
@@ -39,9 +42,6 @@ export function TripChat({
     googleCalendar ? "Plan my day around my Google Calendar events. " : "",
   );
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState<SavedSummary[]>([]);
-  const [showSaved, setShowSaved] = useState(false);
-  const [ready, setReady] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -50,6 +50,26 @@ export function TripChat({
   const [conversation, setConversation] = useState<string[]>([]);
   const requestId = useRef<string | null>(null);
   const sending = useRef(false);
+  const constraintSnapshot = useRef("");
+  const composer = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const input = composer.current;
+    if (!input) return;
+    const resize = () => {
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight + 2, 160)}px`;
+    };
+    resize();
+    const observer = new ResizeObserver(() => {
+      if (input.clientWidth !== width) {
+        width = input.clientWidth;
+        resize();
+      }
+    });
+    let width = input.clientWidth;
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, [draft, compact]);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -77,31 +97,10 @@ export function TripChat({
       stream.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
-  useEffect(() => {
-    let active = true;
-    fetch("/api/schedules")
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok)
-          throw new Error(
-            data.error?.message || "Saved schedules are unavailable.",
-          );
-        if (active) setSaved(data);
-      })
-      .catch((err) => {
-        if (active) setError(err.message);
-      })
-      .finally(() => {
-        if (active) setReady(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
   async function submit(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (busy || transcribing || sending.current || !text || !ready) return;
+    if (busy || transcribing || sending.current || !text) return;
     sending.current = true;
     onBusy(true);
     setPlanning(true);
@@ -109,17 +108,24 @@ export function TripChat({
     requestId.current ??= crypto.randomUUID();
     const combined = [...conversation, `User: ${text}`].join("\n");
     try {
+      const constraints = getConstraints();
+      const snapshot = JSON.stringify(constraints);
+      if (snapshot !== constraintSnapshot.current) {
+        requestId.current = crypto.randomUUID();
+        constraintSnapshot.current = snapshot;
+      }
       if (combined.length > 4000)
         throw new Error(
           "Please start a shorter request (up to 4,000 characters).",
         );
-      const response = await fetch("/api/schedules", {
+      const response = await fetch("/api/schedules/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: combined,
           context,
           googleCalendar,
+          constraints,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           requestId: requestId.current,
         }),
@@ -128,7 +134,7 @@ export function TripChat({
       if (!response.ok)
         throw new Error(
           data.error?.message ||
-            "We couldn’t save your schedule. Please try again.",
+            "We couldn’t plan your schedule. Please try again.",
         );
       if (data.clarification) {
         onMessages((previous) => [
@@ -152,21 +158,25 @@ export function TripChat({
         ? workspaceSchema.parse(data.workspace)
         : null;
       onSaved(document, workspace);
-      setSaved((current) =>
-        [
-          { id: schedule.id, name: schedule.name, status: run.status },
-          ...current.filter((item) => item.id !== schedule.id),
-        ].slice(0, 30),
+      const resultingPlaceIds = new Set(
+        document.schedule_items.map((item) => item.place_id).filter(Boolean),
       );
+      const removed = (constraints?.selectedStops ?? []).filter(
+        (stop) => !resultingPlaceIds.has(stop.id),
+      );
+      const changeSummary = removed.length
+        ? `Removed ${removed.map((stop) => stop.name).join(", ")} from this itinerary. `
+        : "";
       onMessages((previous) => [
         ...previous,
         { role: "user", text },
         {
           role: "assistant",
           text:
-            run.status === "feasible"
-              ? `Saved “${schedule.name}”. Review your places and any unscheduled activities.`
-              : `Saved “${schedule.name}”, including activities that still need planning. Review the conflicts in the itinerary.`,
+            changeSummary +
+            (run.status === "feasible"
+              ? `Planned “${schedule.name}”. Review your itinerary, then press Save schedule to keep it in your account.`
+              : `Planned “${schedule.name}”, including activities that still need planning. Review the conflicts before saving.`),
         },
       ]);
       setDraft("");
@@ -174,7 +184,7 @@ export function TripChat({
       requestId.current = null;
     } catch (err) {
       // Keep the draft and request id so a retry is idempotent.
-      setError(err instanceof Error ? err.message : "Unable to save schedule.");
+      setError(err instanceof Error ? err.message : "Unable to plan schedule.");
     } finally {
       sending.current = false;
       setPlanning(false);
@@ -336,32 +346,6 @@ export function TripChat({
       );
     }
   }
-  async function load(id: string) {
-    if (busy || sending.current) return;
-    sending.current = true;
-    onBusy(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/schedules/${id}`);
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error?.message || "Unable to open this schedule.");
-      onSaved(data, null);
-      setShowSaved(false);
-      onMessages((previous) => [
-        ...previous,
-        {
-          role: "assistant",
-          text: "Opened your saved schedule. Travel estimates reflect its last calculation.",
-        },
-      ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to open schedule.");
-    } finally {
-      sending.current = false;
-      onBusy(false);
-    }
-  }
   function startOver() {
     setConversation([]);
     setDraft("");
@@ -387,14 +371,6 @@ export function TripChat({
           Plan with PathWayve
         </h2>
         <div className="chat-header-actions">
-          <button
-            type="button"
-            className="text-button"
-            aria-expanded={showSaved}
-            onClick={() => setShowSaved(!showSaved)}
-          >
-            Saved schedules ({saved.length})
-          </button>
           {messages.length > 0 && (
             <button
               type="button"
@@ -415,25 +391,6 @@ export function TripChat({
           </button>
         </div>
       </header>
-      {showSaved && (
-        <div className="saved-schedule-list" aria-label="Saved schedules">
-          {saved.length ? (
-            saved.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                disabled={busy}
-                onClick={() => void load(item.id)}
-              >
-                <strong>{item.name}</strong>
-                <span>{item.status}</span>
-              </button>
-            ))
-          ) : (
-            <p>Your saved schedules will appear here in this browser.</p>
-          )}
-        </div>
-      )}
       <div className="chat-messages" role="log" aria-label="Conversation">
         {!messages.length && (
           <p className="chat-empty">
@@ -485,8 +442,24 @@ export function TripChat({
           </button>
         </div>
       )}
+      <p className="hint chat-constraints-note">
+        Required and locked stops are protected. Ask to remove optional stops in
+        chat. General place requests search within your route radius.
+      </p>
       <form className="chat-composer" onSubmit={submit}>
-        <input
+        <textarea
+          ref={composer}
+          rows={1}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
           autoFocus
           aria-label="Chat message"
           placeholder="Describe your day"
@@ -511,11 +484,9 @@ export function TripChat({
         </button>
         <button
           type="submit"
-          disabled={!ready || busy || transcribing || !draft.trim()}
+          disabled={busy || transcribing || !draft.trim()}
           aria-label="Send message"
-          title={
-            transcribing ? "Transcribing voice" : "Generate and save schedule"
-          }
+          title={transcribing ? "Transcribing voice" : "Generate schedule"}
         >
           <Icon name="send" size={15} />
         </button>

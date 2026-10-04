@@ -280,23 +280,37 @@ describe("live geographic providers without Gemini", () => {
     expect(json.trip.source).toBe("live");
     expect(json.version).toBe(1);
   });
+  // A Google Weather hourly record, as returned by forecast/hours:lookup.
+  const hour = (
+    startTime: string,
+    degrees: number,
+    percent: number,
+    type: string,
+  ) => ({
+    interval: { startTime },
+    temperature: { degrees, unit: "CELSIUS" },
+    precipitation: { probability: { percent, type: "RAIN" } },
+    weatherCondition: { type },
+  });
   it("attaches structured weather when enabled without calling a model", async () => {
     vi.stubEnv("WEATHER_DATA_MODE", "live");
+    vi.useFakeTimers({
+      toFake: ["Date"],
+      now: Date.parse("2030-10-03T18:30:00Z"),
+    });
     const fetch = vi.fn().mockImplementation((url: string | URL) => {
       const value = String(url);
-      if (value.includes("open-meteo"))
+      if (value.includes("weather.googleapis.com"))
         return Promise.resolve(
           Response.json({
-            hourly: {
-              time: [
-                "2030-10-03T19:00",
-                "2030-10-03T20:00",
-                "2030-10-03T21:00",
-              ],
-              temperature_2m: [13, 12.5, 12],
-              precipitation_probability: [20, 65, 80],
-              weather_code: [3, 61, 61],
-            },
+            forecastHours: [
+              hour("2030-10-03T18:00:00Z", 13.5, 10, "CLEAR"),
+              hour("2030-10-03T19:00:00Z", 13, 20, "MOSTLY_CLOUDY"),
+              hour("2030-10-03T20:00:00Z", 12.5, 65, "LIGHT_RAIN"),
+              hour("2030-10-03T21:00:00Z", 12, 80, "RAIN_SHOWERS"),
+              hour("2030-10-03T22:00:00Z", 11, 90, "RAIN"),
+            ],
+            timeZone: { id: "America/Vancouver" },
           }),
         );
       return Promise.resolve(Response.json({ routes: [response("600s")] }));
@@ -306,7 +320,7 @@ describe("live geographic providers without Gemini", () => {
       ...exampleRequest(),
       selectedStops: [],
       startTime: "2030-10-03T19:00:00Z",
-      endTime: "2030-10-03T22:00:00Z",
+      endTime: "2030-10-03T21:59:00Z",
     });
     expect(trip.weather).toHaveLength(3);
     expect(trip.weather?.[1]).toMatchObject({
@@ -314,6 +328,7 @@ describe("live geographic providers without Gemini", () => {
       precipitationProbability: 65,
       condition: "rain",
     });
+    expect(trip.weather?.[0].condition).toBe("cloudy");
     expect(trip.bringAdvice).toMatchObject({
       warmth: "hoodie",
       precipitation: "rain_gear",
@@ -321,11 +336,61 @@ describe("live geographic providers without Gemini", () => {
     });
     expect(trip.warnings[0]).toContain("rain risk up to 80%");
     expect(fetch).toHaveBeenCalledTimes(2);
+    const url = new URL(
+      fetch.mock.calls.find(([u]) => String(u).includes("weather"))![0],
+    );
+    expect(url.searchParams.get("location.latitude")).toBe(
+      String(exampleRequest().destination.location.lat),
+    );
+    expect(url.searchParams.get("hours")).toBe("5");
+  });
+  it("pages through the hourly forecast and skips trips beyond its horizon", async () => {
+    vi.useFakeTimers({
+      toFake: ["Date"],
+      now: Date.parse("2030-10-03T00:30:00Z"),
+    });
+    vi.stubEnv("GOOGLE_MAPS_SERVER_API_KEY", "test-key");
+    const { googleWeather } = await import("@/lib/weather");
+    const fetch = vi.fn().mockImplementation((url: string | URL) => {
+      const token = new URL(String(url)).searchParams.get("pageToken");
+      return Promise.resolve(
+        Response.json(
+          token
+            ? {
+                forecastHours: [
+                  hour("2030-10-04T00:00:00Z", 9, 0, "SNOW_SHOWERS"),
+                ],
+              }
+            : {
+                forecastHours: [hour("2030-10-03T23:00:00Z", 10, 0, "CLEAR")],
+                nextPageToken: "page-2",
+              },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetch);
+    const location = exampleRequest().destination.location;
+    const weather = await googleWeather.forecast(
+      location,
+      "2030-10-03T23:00:00Z",
+      "2030-10-04T00:30:00Z",
+    );
+    expect(weather.map((item) => item.condition)).toEqual(["clear", "snow"]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    fetch.mockClear();
+    expect(
+      await googleWeather.forecast(
+        location,
+        "2030-10-20T12:00:00Z",
+        "2030-10-20T18:00:00Z",
+      ),
+    ).toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
   });
   it("reports unavailable weather without fabricating conditions", async () => {
     vi.stubEnv("WEATHER_DATA_MODE", "live");
     const fetch = vi.fn().mockImplementation((url: string | URL) => {
-      if (String(url).includes("open-meteo"))
+      if (String(url).includes("weather.googleapis.com"))
         return Promise.resolve(new Response("{}", { status: 503 }));
       return Promise.resolve(Response.json({ routes: [response("600s")] }));
     });

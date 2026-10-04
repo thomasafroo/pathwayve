@@ -112,3 +112,34 @@ describe("API errors", () => {
     });
   });
 });
+
+it("manual planning waits for opening and refuses a closed required stop", async () => {
+  const baseline = await planTrip(exampleRequest());
+  const request = tripRequestSchema.parse({
+    ...exampleRequest(),
+    startTime: "2030-10-04T09:00:00-07:00",
+    endTime: "2030-10-04T23:00:00-07:00",
+    selectedStops: [
+      {
+        ...baseline.stops[0],
+        durationMinutes: 30,
+        openingHours: {
+          timeZone: "America/Vancouver",
+          checkedAt: "2030-09-01T00:00:00Z",
+          regular: {
+            periods: [
+              { open: { day: 5, hour: 15 }, close: { day: 5, hour: 17 } },
+            ],
+          },
+        },
+      },
+    ],
+  });
+  const trip = await planTrip(request);
+  expect(trip.stops[0].arrivalTime).toBe("2030-10-04T22:00:00.000Z");
+  expect(trip.stops[0].waitMinutes).toBeGreaterThan(0);
+  request.selectedStops![0].openingHours!.businessStatus = "CLOSED_TEMPORARILY";
+  await expect(planTrip(request)).rejects.toMatchObject({
+    code: "OPENING_HOURS",
+  });
+});

@@ -19,14 +19,15 @@ export type GoogleCalendarSummary = {
   accessRole: string;
   primary?: boolean;
 };
-export type CalendarEvent = {
-  uid: string;
-  title: string;
-  location: string;
-  start: string;
-  end: string;
-  allDay: boolean;
-  dateStart?: string;
-  dateEnd?: string;
-  busy: boolean;
-};
+export const calendarEventSchema = z.object({
+  uid: z.string(),
+  title: z.string(),
+  location: z.string(),
+  start: z.iso.datetime({ offset: true }),
+  end: z.iso.datetime({ offset: true }),
+  allDay: z.boolean(),
+  dateStart: z.iso.date().optional(),
+  dateEnd: z.iso.date().optional(),
+  busy: z.boolean(),
+});
+export type CalendarEvent = z.infer<typeof calendarEventSchema>;

@@ -15,12 +15,14 @@ import { validateIntent } from "@/types/schedule";
 import { materializeSchedule } from "@/lib/schedule-planning";
 import {
   saveSchedule,
+  deleteSchedule,
   readSchedule,
   findByRequest,
 } from "@/lib/schedule-repository";
 import type { Database } from "@/lib/server/database";
 import { computeLeg } from "@/lib/routes";
 import { AppError } from "@/lib/server/http";
+import { googleWeather } from "@/lib/weather";
 
 vi.mock("@/lib/place-search", () => ({
   searchPlaces: vi.fn(async ({ query }: { query: string }) => ({
@@ -116,6 +118,7 @@ describe("placing saved intentions", () => {
     const { document, workspace } = await materializeSchedule(
       scheduleIntent(),
       owner,
+      null,
       [meeting],
     );
     const run = document.schedule_runs[0];
@@ -134,33 +137,48 @@ describe("placing saved intentions", () => {
       timing_type: "fixed",
       fixed_start_at: "2030-10-04T20:30:00Z",
     });
-    const { document } = await materializeSchedule(draft, owner, [meeting]);
+    const { document } = await materializeSchedule(draft, owner, null, [
+      meeting,
+    ]);
     expect(document.schedule_runs[0].status).toBe("infeasible");
     expect(document.schedule_runs[0].result.placements).toHaveLength(0);
   });
   it("does not shift activities for Google events marked available", async () => {
-    const { document } = await materializeSchedule(scheduleIntent(), owner, [
-      { ...meeting, busy: false },
-    ]);
+    const { document } = await materializeSchedule(
+      scheduleIntent(),
+      owner,
+      null,
+      [{ ...meeting, busy: false }],
+    );
     expect(document.schedule_runs[0].result.placements[0].starts_at).toBe(
       "2030-10-04T20:10:00.000Z",
     );
   });
   it("attaches weather to Gemini-created map trips and workspaces", async () => {
     vi.stubEnv("WEATHER_DATA_MODE", "live");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        Response.json({
-          hourly: {
-            time: ["2030-10-04T20:00", "2030-10-04T21:00", "2030-10-04T22:00"],
-            temperature_2m: [13, 12, 11],
-            precipitation_probability: [10, 60, 75],
-            weather_code: [3, 61, 61],
-          },
-        }),
-      ),
-    );
+    vi.spyOn(googleWeather, "forecast").mockResolvedValue([
+      {
+        location: { lat: 49.28, lng: -123.11 },
+        forecastTime: "2030-10-04T20:00:00.000Z",
+        temperatureCelsius: 13,
+        precipitationProbability: 10,
+        condition: "cloudy",
+      },
+      {
+        location: { lat: 49.28, lng: -123.11 },
+        forecastTime: "2030-10-04T21:00:00.000Z",
+        temperatureCelsius: 12,
+        precipitationProbability: 60,
+        condition: "rain",
+      },
+      {
+        location: { lat: 49.28, lng: -123.11 },
+        forecastTime: "2030-10-04T22:00:00.000Z",
+        temperatureCelsius: 11,
+        precipitationProbability: 75,
+        condition: "rain",
+      },
+    ]);
     const { document, workspace } = await materializeSchedule(
       scheduleIntent(),
       owner,
@@ -369,5 +387,50 @@ describe("real PostgreSQL storage", () => {
     expect(
       await readSchedule(database, owner, second.document.schedules[0].id),
     ).toBeNull();
+  });
+});
+
+describe("manual schedule lifecycle", () => {
+  it("deletes only the current owner's schedule and cascades its items and runs", async () => {
+    const { document } = await materializeSchedule(scheduleIntent(), owner);
+    const id = document.schedules[0].id;
+    await saveSchedule(database, document, randomUUID());
+    expect(await deleteSchedule(database, randomUUID(), id)).toBe(false);
+    expect(await readSchedule(database, owner, id)).not.toBeNull();
+    expect(await deleteSchedule(database, owner, id)).toBe(true);
+    expect(await readSchedule(database, owner, id)).toBeNull();
+    expect(
+      (
+        await database.query(
+          "SELECT id FROM pathwayve.schedule_items WHERE schedule_id = $1",
+          [id],
+        )
+      ).rows,
+    ).toHaveLength(0);
+    expect(
+      (
+        await database.query(
+          "SELECT id FROM pathwayve.schedule_runs WHERE schedule_id = $1",
+          [id],
+        )
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("copies a draft with fresh IDs and retains its route snapshot", async () => {
+    const { ownedSnapshot } = await import("@/lib/schedule-snapshot");
+    const { document } = await materializeSchedule(scheduleIntent(), owner);
+    const newOwner = randomUUID();
+    const copy = ownedSnapshot(
+      { requestId: randomUUID(), document, workspace: null },
+      newOwner,
+    );
+    expect(copy.schedules[0].id).not.toBe(document.schedules[0].id);
+    expect(copy.schedules[0].user_id).toBe(newOwner);
+    await saveSchedule(database, copy, randomUUID());
+    const loaded = await readSchedule(database, newOwner, copy.schedules[0].id);
+    expect(loaded?.schedule_runs[0].result.map_trip?.stops).toEqual(
+      document.schedule_runs[0].result.map_trip?.stops,
+    );
+    expect(copy.schedule_items[0].id).not.toBe(document.schedule_items[0].id);
   });
 });

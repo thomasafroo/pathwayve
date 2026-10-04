@@ -1,28 +1,37 @@
 import "server-only";
-import { cookies } from "next/headers";
-import { createHash, randomBytes } from "node:crypto";
+import { headers } from "next/headers";
+import { authConfigured, getAuth } from "./auth";
 import { AppError } from "./http";
 
-// Anonymous browser ownership, not a user account. Never trust a body user_id.
+// Ownership always comes from the authenticated server session.
 export async function scheduleOwner(): Promise<string> {
-  const jar = await cookies();
-  let token = jar.get("pathwayve_session")?.value;
-  if (!token || !/^[a-f0-9]{64}$/.test(token)) {
-    token = randomBytes(32).toString("hex");
-    jar.set("pathwayve_session", token, {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
-  }
-  const hash = createHash("sha256").update(token).digest("hex");
-  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  if (!authConfigured())
+    throw new AppError(
+      "UNAUTHENTICATED",
+      "Sign in to save and view your schedules.",
+      401,
+    );
+  const session = await (
+    await getAuth()
+  ).api.getSession({ headers: await headers() });
+  if (!session)
+    throw new AppError(
+      "UNAUTHENTICATED",
+      "Sign in to save and view your schedules.",
+      401,
+    );
+  return session.user.id;
 }
 export function checkOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin)
+  // Next may normalize the internal URL hostname; Host identifies the browser-facing site.
+  const site = new URL(request.url);
+  const host = request.headers.get("host");
+  if (host) site.host = host;
+  if (
+    (origin && origin !== site.origin) ||
+    request.headers.get("sec-fetch-site") === "cross-site"
+  )
     throw new AppError(
       "ORIGIN",
       "Use the planner on this site to save schedules.",

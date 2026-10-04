@@ -35,10 +35,17 @@ Without a server key, “Load sample trip” demonstrates fictional stops and es
 travel. The browser map alone does not enable internet place search or real routes.
 Live failures are shown rather than replaced with samples.
 
-Set `WEATHER_DATA_MODE=live` to add Open-Meteo hourly destination weather to live
-plans. Weather is fetched as structured forecast data; no LLM generates or
+Plans include Google Weather API hourly destination weather (up to 10 days ahead)
+using `GOOGLE_MAPS_SERVER_API_KEY`; enable the Weather API for that key's Google
+Cloud project. Set `WEATHER_DATA_MODE=off` to disable it. Weather is fetched as structured forecast data; no LLM generates or
 interprets conditions. The backend also turns those facts into playful
 deterministic “what to bring” advice.
+
+Chat schedules use Gemini with Grounding with Google Maps to pick and explain stops.
+Each stop gets a "Why this stop" note built from Google Maps place details and
+reviews, with links to its sources. Requested seating, quiet or wifi is marked
+verified only when the Google Maps data says so. Set `MAPS_GROUNDING=off` to
+disable it. See [docs/AI-SCHEDULES.md](docs/AI-SCHEDULES.md#grounding-with-google-maps).
 
 ## Included
 
@@ -51,14 +58,16 @@ deterministic “what to bring” advice.
 - Weather-based clothing/accessory advice when live weather is enabled.
 - Runtime validation, unit/provider tests, and desktop browser tests.
 
-The bottom-centered **Plan & save** composer uses Gemini to generate a structured
-schedule, resolves locations/routes, and stores it in SQL. Open saved schedules
-from the composer after refreshing. Set `GEMINI_API_KEY`; local development uses
+The chat composer uses Gemini to preview a structured schedule and resolve
+locations/routes. Anyone can plan; **Save schedule** prompts Google login and saves
+the exact schedule to the user's private account. **My schedules** reopens saves.
+Configure Google OAuth using [authentication setup](docs/AUTH.md).
+Set `GEMINI_API_KEY`; local development uses
 embedded PostgreSQL automatically, or set `DATABASE_URL` / `TIGER_DATABASE_URL`
 and run `npm run db:migrate`. See [AI schedules](docs/AI-SCHEDULES.md) for contracts,
-database setup, anonymous browser ownership, and verification limits.
+database setup and verification limits.
 
-Multi-day overnight planning, persistent accounts/favourites, weather-aware route
+Multi-day overnight planning, persistent favourites, weather-aware route
 optimization, and active-trip navigation are future features. Ranking uses a
 transparent heuristic; it does not claim personalized AI recommendations.
 

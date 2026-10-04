@@ -1,6 +1,12 @@
 import { z } from "zod";
-import { tripRequestSchema, type TripState } from "./trip";
-import { calendarSelectionSchema, type CalendarEvent } from "./calendar";
+import { tripRequestSchema, tripStateSchema, type TripState } from "./trip";
+import { workspaceSchema } from "./workspace";
+import { planningConstraintsSchema } from "./planning-constraints";
+import {
+  calendarEventSchema,
+  calendarSelectionSchema,
+  type CalendarEvent,
+} from "./calendar";
 
 const instant = z.iso.datetime({ offset: true });
 const zone = z.string().refine((value) => {
@@ -14,6 +20,7 @@ const zone = z.string().refine((value) => {
 export const preferencesSchema = z.object({
   budget: z.enum(["any", "budget", "moderate", "premium"]),
   interests: z.array(z.string().max(80)).max(20),
+  order_policy: z.enum(["preserve", "optimize"]).optional(),
   routing_priority: z.enum(["fastest", "less_walking", "fewer_transfers"]),
   notes: z.string().max(1000),
 });
@@ -38,6 +45,7 @@ export const itemIntentSchema = z.object({
 
 // Gemini produces intentions, not SQL text, ownership IDs, or invented route estimates.
 export const generatedScheduleSchema = z.object({
+  removed_stop_ids: z.array(z.string().min(1)).max(6).optional(),
   schema_version: z.literal(1),
   clarification: z.string().max(500).nullable(),
   schedules: z
@@ -54,7 +62,14 @@ export const generatedScheduleSchema = z.object({
       }),
     )
     .max(1),
-  schedule_items: z.array(itemIntentSchema).max(12),
+  schedule_items: z
+    .array(
+      itemIntentSchema.extend({
+        location_scope: z.enum(["specific", "along_route"]),
+        selected_stop_id: z.string().nullable(),
+      }),
+    )
+    .max(12),
 });
 export type GeneratedSchedule = z.infer<typeof generatedScheduleSchema>;
 export const promptRequestSchema = z.object({
@@ -63,6 +78,7 @@ export const promptRequestSchema = z.object({
   requestId: z.uuid(),
   context: tripRequestSchema.nullable().optional(),
   googleCalendar: calendarSelectionSchema.nullable().optional(),
+  constraints: planningConstraintsSchema.nullable().optional(),
 });
 export type PromptRequest = z.infer<typeof promptRequestSchema>;
 export const savedScheduleSchema = z.object({
@@ -136,6 +152,74 @@ export type ScheduleDocument = {
   schedule_items: SavedItem[];
   schedule_runs: SavedRun[];
 };
+
+export const scheduleDocumentSchema = z.object({
+  schema_version: z.literal(1),
+  schedules: z.array(savedScheduleSchema).length(1),
+  schedule_items: z.array(savedItemSchema).max(12),
+  schedule_runs: z
+    .array(
+      z.object({
+        id: z.uuid(),
+        schedule_id: z.uuid(),
+        schedule_version: z.number().int().positive(),
+        calculated_at: instant,
+        status: z.enum(["feasible", "infeasible", "failed"]),
+        result: z.object({
+          calendar_events: z.array(calendarEventSchema).max(200).optional(),
+          map_trip: tripStateSchema.optional(),
+          placements: z
+            .array(
+              z.object({
+                item_id: z.uuid(),
+                place_id: z.string(),
+                sequence: z.number().int().nonnegative(),
+                starts_at: instant,
+                ends_at: instant,
+              }),
+            )
+            .max(12),
+          travel_legs: z
+            .array(
+              z.object({
+                sequence: z.number().int().nonnegative(),
+                from_place_id: z.string(),
+                to_place_id: z.string(),
+                transportation: z.string(),
+                departs_at: instant,
+                arrives_at: instant,
+                duration_seconds: z.number().nonnegative(),
+                distance_meters: z.number().nonnegative(),
+              }),
+            )
+            .max(13),
+          unscheduled_items: z
+            .array(
+              z.object({
+                item_id: z.uuid(),
+                reason_code: z.string().max(100),
+                reason: z.string().max(2000),
+              }),
+            )
+            .max(12),
+          destination_arrival_at: instant.nullable(),
+          warnings: z.array(z.string().max(4000)).max(50),
+        }),
+      }),
+    )
+    .length(1),
+});
+export const saveRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    document: scheduleDocumentSchema.nullable(),
+    workspace: workspaceSchema.nullable(),
+  })
+  .refine(
+    (value) => value.document || value.workspace,
+    "Create a schedule before saving.",
+  );
+export type SaveRequest = z.infer<typeof saveRequestSchema>;
 
 export function validateIntent(value: unknown): GeneratedSchedule {
   const draft = generatedScheduleSchema.parse(value);
