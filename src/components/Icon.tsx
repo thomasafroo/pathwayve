@@ -1,6 +1,9 @@
 import type { CSSProperties } from "react";
 
 const paths = {
+  search: "M21 21l-6-6M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z",
+  locate:
+    "M12 2v3m0 14v3M2 12h3m14 0h3M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0Zm-4 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   arrow: "M5 12h14m-6-6 6 6-6 6",
   pin: "M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0ZM15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   route: "M5 5h9a4 4 0 0 1 0 8H9a4 4 0 0 0 0 8h10M5 2v6m11 10 3 3-3 3",

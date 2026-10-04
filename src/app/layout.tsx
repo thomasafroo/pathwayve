@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./workspace.css";
 export const metadata: Metadata = {
   title: "PathWayve — Make a day of it",
   description: "An adaptive AI trip planner built for StormHacks.",
