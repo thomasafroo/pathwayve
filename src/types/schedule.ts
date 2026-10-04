@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { tripRequestSchema, type TripState } from "./trip";
+import { calendarSelectionSchema, type CalendarEvent } from "./calendar";
 
 const instant = z.iso.datetime({ offset: true });
 const zone = z.string().refine((value) => {
@@ -61,6 +62,7 @@ export const promptRequestSchema = z.object({
   timeZone: zone,
   requestId: z.uuid(),
   context: tripRequestSchema.nullable().optional(),
+  googleCalendar: calendarSelectionSchema.nullable().optional(),
 });
 export type PromptRequest = z.infer<typeof promptRequestSchema>;
 export const savedScheduleSchema = z.object({
@@ -102,6 +104,7 @@ export type UnscheduledItem = {
   reason: string;
 };
 export type RunResult = {
+  calendar_events?: CalendarEvent[];
   // Display-only snapshot, including provider geometry. Older saves may omit it.
   map_trip?: TripState;
   placements: Placement[];

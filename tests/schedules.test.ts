@@ -103,6 +103,49 @@ describe("Gemini schedule validation", () => {
 });
 
 describe("placing saved intentions", () => {
+  const meeting = {
+    uid: "meeting@calendar",
+    title: "Meeting",
+    location: "",
+    start: "2030-10-04T20:05:00Z",
+    end: "2030-10-04T21:00:00Z",
+    busy: true,
+    allDay: false,
+  };
+  it("moves travel and flexible activities past calendar commitments", async () => {
+    const { document, workspace } = await materializeSchedule(
+      scheduleIntent(),
+      owner,
+      [meeting],
+    );
+    const run = document.schedule_runs[0];
+    expect(run.status).toBe("feasible");
+    expect(workspace).toBeNull();
+    expect(run.result.placements[0].starts_at).toBe("2030-10-04T21:10:00.000Z");
+    expect(run.result.travel_legs[0].departs_at).toBe(
+      "2030-10-04T21:00:00.000Z",
+    );
+    expect(run.result.calendar_events).toEqual([meeting]);
+  });
+  it("rejects fixed appointments that overlap imported events", async () => {
+    const draft = scheduleIntent();
+    Object.assign(draft.schedule_items[0], {
+      priority: "required",
+      timing_type: "fixed",
+      fixed_start_at: "2030-10-04T20:30:00Z",
+    });
+    const { document } = await materializeSchedule(draft, owner, [meeting]);
+    expect(document.schedule_runs[0].status).toBe("infeasible");
+    expect(document.schedule_runs[0].result.placements).toHaveLength(0);
+  });
+  it("does not shift activities for Google events marked available", async () => {
+    const { document } = await materializeSchedule(scheduleIntent(), owner, [
+      { ...meeting, busy: false },
+    ]);
+    expect(document.schedule_runs[0].result.placements[0].starts_at).toBe(
+      "2030-10-04T20:10:00.000Z",
+    );
+  });
   it("attaches weather to Gemini-created map trips and workspaces", async () => {
     vi.stubEnv("WEATHER_DATA_MODE", "live");
     vi.stubGlobal(

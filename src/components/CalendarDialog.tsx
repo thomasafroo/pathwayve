@@ -10,17 +10,21 @@ import {
   readCalendar,
 } from "@/lib/calendar";
 import { Icon } from "./Icon";
+import { GoogleCalendarPanel } from "./GoogleCalendarPanel";
+import type { CalendarSelection } from "@/types/calendar";
 
 export function CalendarDialog({
   imported,
   onImport,
   planned,
   onClose,
+  onPlan,
 }: {
   imported: string | null;
   onImport: (text: string | null) => void;
   planned: string | null;
   onClose: () => void;
+  onPlan: (selection: CalendarSelection) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [error, setError] = useState("");
@@ -33,6 +37,10 @@ export function CalendarDialog({
     return () => element?.close();
   }, []);
   const events = imported ? calendarEntries(imported) : [];
+  const exportText =
+    imported && includePlan && planned
+      ? mergeCalendars(imported, planned)
+      : imported || (includePlan ? planned : null);
   return (
     <dialog
       ref={dialog}
@@ -53,6 +61,11 @@ export function CalendarDialog({
             <Icon name="close" />
           </button>
         </div>
+        <GoogleCalendarPanel
+          onImport={onImport}
+          exportText={exportText}
+          onPlan={onPlan}
+        />
         <label className="calendar-upload">
           Import .ics
           <input

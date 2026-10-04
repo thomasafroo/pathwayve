@@ -81,6 +81,28 @@ export function SavedSchedule({
           );
         })}
       </ol>
+      {!!run.result.calendar_events?.length && (
+        <section
+          aria-label="Calendar commitments"
+          className="saved-calendar-events"
+        >
+          <h3>Calendar commitments</h3>
+          <ol className="saved-items">
+            {run.result.calendar_events.map((event) => (
+              <li key={event.uid}>
+                <strong>{event.title}</strong>
+                <span>
+                  {event.allDay
+                    ? `${event.dateStart} - ${event.dateEnd} (all-day, end exclusive)`
+                    : `${time(event.start)} - ${time(event.end)}`}
+                </span>
+                {event.location && <small>{event.location}</small>}
+                {!event.busy && <small>Available</small>}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       {showRoute && mapTrip && mapTrip.legs.length > 0 && (
         <section className="saved-route" aria-label="Route directions">
           <h3>Route</h3>

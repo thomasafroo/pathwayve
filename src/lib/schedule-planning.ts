@@ -18,11 +18,14 @@ import { searchPlaces } from "./place-search";
 import { computeScheduleLeg } from "./schedule-routing";
 import { mapsMode } from "./server/env";
 import { AppError } from "./server/http";
+import type { CalendarEvent } from "@/types/calendar";
+import { calendarConflict } from "./calendar-availability";
 import { loadTripWeather } from "./weather";
 
 export async function materializeSchedule(
   draft: GeneratedSchedule,
   owner: string,
+  calendarEvents: CalendarEvent[] = [],
 ): Promise<{ document: ScheduleDocument; workspace: WorkspaceTrip | null }> {
   const intent = draft.schedules[0];
   if (!intent)
@@ -111,6 +114,7 @@ export async function materializeSchedule(
     budget: intent.preferences.budget,
   };
   const result: RunResult = {
+    ...(calendarEvents.length ? { calendar_events: calendarEvents } : {}),
     placements: [],
     travel_legs: [],
     unscheduled_items: [],
@@ -131,6 +135,33 @@ export async function materializeSchedule(
   let cursor = origin,
     time = Date.parse(schedule.starts_at),
     failed = false;
+  const routeAroundCalendar = async (
+    from: CandidatePlace,
+    to: CandidatePlace,
+    earliest: number,
+  ) => {
+    let departure = earliest;
+    for (let attempt = 0; attempt <= calendarEvents.length; attempt++) {
+      const leg = await computeScheduleLeg(
+        from,
+        to,
+        request,
+        new Date(departure).toISOString(),
+      );
+      const conflict = calendarConflict(
+        calendarEvents,
+        departure,
+        departure + leg.durationMinutes * 60000,
+      );
+      if (!conflict) return { leg, departure };
+      departure = Date.parse(conflict.end);
+    }
+    throw new AppError(
+      "CALENDAR_CONFLICT",
+      "Travel cannot fit around the calendar events.",
+      422,
+    );
+  };
   const addLeg = (
     from: CandidatePlace,
     to: CandidatePlace,
@@ -192,14 +223,9 @@ export async function materializeSchedule(
         );
         continue;
       }
-      const leg = await computeScheduleLeg(
-        cursor,
-        place,
-        request,
-        new Date(time).toISOString(),
-      );
-      const arrival = time + leg.durationMinutes * 60000;
-      const start = item.fixed_start_at
+      let routed = await routeAroundCalendar(cursor, place, time);
+      let arrival = routed.departure + routed.leg.durationMinutes * 60000;
+      let start = item.fixed_start_at
         ? Date.parse(item.fixed_start_at)
         : Math.max(
             arrival,
@@ -207,8 +233,28 @@ export async function materializeSchedule(
               ? Date.parse(item.earliest_start_at)
               : arrival,
           );
-      const finish = start + item.duration_minutes * 60000;
+      let finish = start + item.duration_minutes * 60000;
+      let conflict = calendarConflict(calendarEvents, start, finish);
+      for (
+        let attempt = 0;
+        conflict && !item.fixed_start_at && attempt <= calendarEvents.length;
+        attempt++
+      ) {
+        routed = await routeAroundCalendar(
+          cursor,
+          place,
+          Math.max(routed.departure, Date.parse(conflict.end)),
+        );
+        arrival = routed.departure + routed.leg.durationMinutes * 60000;
+        start = Math.max(
+          arrival,
+          item.earliest_start_at ? Date.parse(item.earliest_start_at) : arrival,
+        );
+        finish = start + item.duration_minutes * 60000;
+        conflict = calendarConflict(calendarEvents, start, finish);
+      }
       if (
+        conflict ||
         start < arrival ||
         finish > Date.parse(schedule.ends_at) ||
         (item.latest_end_at && finish > Date.parse(item.latest_end_at))
@@ -221,14 +267,9 @@ export async function materializeSchedule(
         continue;
       }
       // Check the destination too before admitting a stop; never promise a late arrival.
-      const onward = await computeScheduleLeg(
-        place,
-        destination,
-        request,
-        new Date(finish).toISOString(),
-      );
+      const onward = await routeAroundCalendar(place, destination, finish);
       if (
-        finish + onward.durationMinutes * 60000 >
+        onward.departure + onward.leg.durationMinutes * 60000 >
         Date.parse(schedule.ends_at)
       ) {
         unavailable(
@@ -238,7 +279,7 @@ export async function materializeSchedule(
         );
         continue;
       }
-      addLeg(cursor, place, leg, time);
+      addLeg(cursor, place, routed.leg, routed.departure);
       result.placements.push({
         item_id: item.id,
         place_id: place.id,
@@ -257,15 +298,10 @@ export async function materializeSchedule(
       cursor = place;
       time = finish;
     }
-    const last = await computeScheduleLeg(
-      cursor,
-      destination,
-      request,
-      new Date(time).toISOString(),
-    );
-    addLeg(cursor, destination, last, time);
+    const last = await routeAroundCalendar(cursor, destination, time);
+    addLeg(cursor, destination, last.leg, last.departure);
     result.destination_arrival_at = new Date(
-      time + last.durationMinutes * 60000,
+      last.departure + last.leg.durationMinutes * 60000,
     ).toISOString();
   } catch (error) {
     const code = error instanceof AppError ? error.code : "ROUTE_UNAVAILABLE";
@@ -306,6 +342,10 @@ export async function materializeSchedule(
   result.warnings.push(
     "Place matches were selected from search results. Review them before travelling; opening hours and availability are not verified.",
   );
+  if (calendarEvents.length)
+    result.warnings.push(
+      "Calendar events reserve time. Travel to calendar-event locations is not included; review those journeys separately.",
+    );
   if (source === "demo")
     result.warnings.push(
       "Sample geography and estimated travel times. Not navigation directions.",
@@ -356,6 +396,7 @@ export async function materializeSchedule(
   // Timed appointments/standalone tasks use the saved schedule view, whose constraints
   // cannot be represented faithfully by the older editable TripState contract.
   const canUseWorkspace =
+    calendarEvents.length === 0 &&
     status === "feasible" &&
     items.every(
       (item) => item.kind === "visit" && item.timing_type === "flexible",

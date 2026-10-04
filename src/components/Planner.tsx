@@ -24,9 +24,12 @@ import { PlaceSearch } from "./PlaceSearch";
 import type { CandidatePlace } from "@/types/trip";
 import { CalendarDialog } from "./CalendarDialog";
 import { savedScheduleCalendar, workspaceCalendar } from "@/lib/calendar";
+import type { CalendarSelection } from "@/types/calendar";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [googleCalendar, setGoogleCalendar] =
+    useState<CalendarSelection | null>(null);
   const [importedCalendar, setImportedCalendar] = useState<string | null>(null);
   const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -305,6 +308,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           )}
           {assistantOpen && (
             <TripChat
+              googleCalendar={googleCalendar}
+              onClearCalendar={() => setGoogleCalendar(null)}
               compact={showItinerary}
               messages={chatMessages}
               onMessages={setChatMessages}
@@ -519,6 +524,11 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
       )}
       {calendarOpen && (
         <CalendarDialog
+          onPlan={(selection) => {
+            setGoogleCalendar(selection);
+            setCalendarOpen(false);
+            setAssistantOpen(true);
+          }}
           imported={importedCalendar}
           onImport={setImportedCalendar}
           planned={

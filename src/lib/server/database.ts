@@ -16,6 +16,7 @@ export interface Database extends SqlConnection {
 }
 const globalDb = globalThis as typeof globalThis & {
   pathwayveDatabase?: Promise<Database>;
+  pathwayveCalendarMigration?: Promise<unknown>;
 };
 async function connect(): Promise<Database> {
   const url = process.env.DATABASE_URL || process.env.TIGER_DATABASE_URL;
@@ -64,10 +65,28 @@ async function connect(): Promise<Database> {
     transaction: (work) => db.transaction(work),
   };
 }
-export function getDatabase() {
+export async function getDatabase() {
   globalDb.pathwayveDatabase ??= connect().catch((error) => {
     delete globalDb.pathwayveDatabase;
     throw error;
   });
-  return globalDb.pathwayveDatabase;
+  const database = await globalDb.pathwayveDatabase;
+  // A hot-reloaded development server may already have an embedded connection.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    !process.env.DATABASE_URL &&
+    !process.env.TIGER_DATABASE_URL
+  ) {
+    globalDb.pathwayveCalendarMigration ??= readFile(
+      resolve("db/migrations/002_google_calendar.sql"),
+      "utf8",
+    )
+      .then((sql) => database.query(sql))
+      .catch((error) => {
+        delete globalDb.pathwayveCalendarMigration;
+        throw error;
+      });
+    await globalDb.pathwayveCalendarMigration;
+  }
+  return database;
 }

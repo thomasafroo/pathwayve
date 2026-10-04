@@ -10,6 +10,7 @@ import {
 import { getDatabase } from "@/lib/server/database";
 import { checkOrigin, scheduleOwner } from "@/lib/server/schedule-session";
 import { AppError, handleApi, readJson } from "@/lib/server/http";
+import { loadGoogleEvents } from "@/lib/server/google-calendar";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export async function GET() {
@@ -30,9 +31,23 @@ export async function POST(request: Request) {
         document: await readSchedule(db, owner, previous),
         workspace: null,
       };
-    const draft = await generateSchedule(input);
+    const calendar = input.googleCalendar
+      ? await loadGoogleEvents(owner, input.googleCalendar)
+      : null;
+    const draft = await generateSchedule(input, calendar?.events);
     if (draft.clarification) return { clarification: draft.clarification };
-    const saved = await materializeSchedule(draft, owner);
+    if (
+      calendar &&
+      (Date.parse(draft.schedules[0].starts_at) <
+        Date.parse(calendar.range.start) ||
+        Date.parse(draft.schedules[0].ends_at) > Date.parse(calendar.range.end))
+    )
+      throw new AppError(
+        "CALENDAR_RANGE",
+        "The requested schedule is outside the imported calendar dates. Change the calendar date range and try again.",
+        422,
+      );
+    const saved = await materializeSchedule(draft, owner, calendar?.events);
     try {
       await saveSchedule(db, saved.document, input.requestId);
     } catch {

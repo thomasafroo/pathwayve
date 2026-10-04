@@ -4,6 +4,7 @@ import type { TripRequest } from "@/types/trip";
 import { workspaceSchema, type WorkspaceTrip } from "@/types/workspace";
 import type { ScheduleDocument } from "@/types/schedule";
 import { Icon } from "./Icon";
+import type { CalendarSelection } from "@/types/calendar";
 
 export type ChatMessage = { role: "user" | "assistant"; text: string };
 type SavedSummary = { id: string; name: string; status: string };
@@ -17,6 +18,8 @@ export function TripChat({
   onBusy,
   onSaved,
   onClose,
+  googleCalendar,
+  onClearCalendar,
 }: {
   compact: boolean;
   messages: ChatMessage[];
@@ -29,8 +32,12 @@ export function TripChat({
     workspace: WorkspaceTrip | null,
   ) => void;
   onClose: () => void;
+  googleCalendar?: CalendarSelection | null;
+  onClearCalendar?: () => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(
+    googleCalendar ? "Plan my day around my Google Calendar events. " : "",
+  );
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<SavedSummary[]>([]);
   const [showSaved, setShowSaved] = useState(false);
@@ -112,6 +119,7 @@ export function TripChat({
         body: JSON.stringify({
           prompt: combined,
           context,
+          googleCalendar,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           requestId: requestId.current,
         }),
@@ -456,6 +464,27 @@ export function TripChat({
         )}
         <div ref={end} />
       </div>
+      {googleCalendar && (
+        <div className="chat-calendar-context">
+          <span>
+            Google Calendar: {googleCalendar.startDate} to{" "}
+            {googleCalendar.endDate}
+          </span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Stop using Google Calendar"
+            title="Stop using Google Calendar"
+            disabled={busy}
+            onClick={() => {
+              onClearCalendar?.();
+              requestId.current = null;
+            }}
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      )}
       <form className="chat-composer" onSubmit={submit}>
         <input
           autoFocus
