@@ -634,23 +634,39 @@ export function TripForm({
           <div className="time-fields">
             <label className="time-field">
               <span className="time-field-label">Departure</span>
-              <input
-                aria-describedby="time-help"
-                value={startValue}
-                onChange={(event) => setStartValue(event.target.value)}
-                name="start"
-                type="datetime-local"
-              />
+              <span className="time-input-wrap">
+                <input
+                  aria-describedby="time-help"
+                  className={startValue ? undefined : "is-empty"}
+                  value={startValue}
+                  onChange={(event) => setStartValue(event.target.value)}
+                  name="start"
+                  type="datetime-local"
+                />
+                {!startValue && (
+                  <span className="time-input-placeholder" aria-hidden="true">
+                    Select date and time
+                  </span>
+                )}
+              </span>
             </label>
             <label className="time-field">
               <span className="time-field-label">Finish by</span>
-              <input
-                aria-describedby="time-help"
-                value={endValue}
-                onChange={(event) => setEndValue(event.target.value)}
-                name="end"
-                type="datetime-local"
-              />
+              <span className="time-input-wrap">
+                <input
+                  aria-describedby="time-help"
+                  className={endValue ? undefined : "is-empty"}
+                  value={endValue}
+                  onChange={(event) => setEndValue(event.target.value)}
+                  name="end"
+                  type="datetime-local"
+                />
+                {!endValue && (
+                  <span className="time-input-placeholder" aria-hidden="true">
+                    Select date and time
+                  </span>
+                )}
+              </span>
             </label>
           </div>
           <p id="time-help" className="hint">
