@@ -743,6 +743,16 @@ body {
   display: grid;
   place-items: center;
 }
+.chat-composer .voice-button {
+  background: #eef3ef;
+  color: var(--green);
+  border: 1px solid #d7e0d8;
+}
+.chat-composer .voice-button.recording {
+  background: #fbefec;
+  color: #9a3026;
+  border-color: #efcfc8;
+}
 .route-summary {
   position: absolute;
   bottom: 20px;

@@ -37,6 +37,7 @@ const paths = {
   download: "M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4",
   undo: "m9 3-6 6 6 6M3 9h10a7 7 0 0 1 0 14",
   layers: "m12 3 10 6-10 6L2 9l10-6Zm-10 12 10 6 10-6M2 12l10 6 10-6",
+  mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8",
 } as const;
 const designIcons = [
   "chat",

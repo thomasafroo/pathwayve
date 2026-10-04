@@ -1751,3 +1751,50 @@ input[type="checkbox"] {
 .place-search > label {
   margin-bottom: 0;
 }
+.calendar-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+.calendar-upload,
+.calendar-events form,
+.calendar-events label {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.calendar-upload {
+  margin: 20px 0;
+}
+.calendar-upload input,
+.calendar-events input {
+  width: 100%;
+  min-width: 0;
+}
+.calendar-events details {
+  border-bottom: 1px solid #d9dfdc;
+  padding: 12px 0;
+}
+.calendar-events summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.calendar-events summary span {
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.calendar-events form {
+  padding: 12px 0;
+}
+.calendar-choice,
+.calendar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.calendar-choice input {
+  width: auto;
+}

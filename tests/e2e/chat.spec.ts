@@ -71,6 +71,7 @@ const document = {
           ],
         },
         placements: [],
+        travel_legs: [],
         unscheduled_items: [
           { item_id: "item-1", reason: "Choose a quiet place to study." },
         ],

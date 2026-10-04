@@ -23,9 +23,13 @@ import type { ScheduleDocument } from "@/types/schedule";
 import { PlaceSearch } from "./PlaceSearch";
 import { AccountControls } from "./AccountControls";
 import type { CandidatePlace } from "@/types/trip";
+import { CalendarDialog } from "./CalendarDialog";
+import { savedScheduleCalendar, workspaceCalendar } from "@/lib/calendar";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [formVersion, setFormVersion] = useState(0);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [importedCalendar, setImportedCalendar] = useState<string | null>(null);
   const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -186,6 +190,14 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           PathWayve
         </Link>
         <div className="workspace-heading-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => setCalendarOpen(true)}
+          >
+            Calendar
+          </button>
           <span className="workspace-mode">
             {mode === "demo" ? "Demo" : "Live"}
           </span>
@@ -225,6 +237,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               setSelectedId(null);
               setEditor(null);
               setPicking(false);
+              setCalendarOpen(false);
+              setImportedCalendar(null);
             }}
           />
         </div>
@@ -536,6 +550,21 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           stopId={activityStop}
           onApply={modify}
           onClose={() => setEditor(null)}
+        />
+      )}
+      {calendarOpen && (
+        <CalendarDialog
+          imported={importedCalendar}
+          onImport={setImportedCalendar}
+          planned={
+            state
+              ? workspaceCalendar(state)
+              : savedDocument &&
+                  savedDocument.schedule_runs[0]?.status !== "failed"
+                ? savedScheduleCalendar(savedDocument)
+                : null
+          }
+          onClose={() => setCalendarOpen(false)}
         />
       )}
     </div>
