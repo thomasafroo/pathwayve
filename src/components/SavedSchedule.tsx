@@ -2,6 +2,8 @@
 import { Fragment } from "react";
 import type { ScheduleDocument } from "@/types/schedule";
 import { TravelLeg } from "./TravelLeg";
+import { downloadCalendar, savedScheduleCalendar } from "@/lib/calendar";
+import { Icon } from "./Icon";
 
 export function SavedSchedule({
   document,
@@ -115,6 +117,23 @@ export function SavedSchedule({
       )}
       <button className="secondary" type="button" onClick={download}>
         Download saved schedule JSON
+      </button>
+      <button
+        className="secondary"
+        type="button"
+        disabled={
+          run.status === "failed" ||
+          (!run.result.placements.length && !run.result.travel_legs.length)
+        }
+        onClick={() =>
+          downloadCalendar(
+            savedScheduleCalendar(document),
+            `pathwayve-saved-${schedule.id}`,
+          )
+        }
+      >
+        <Icon name="download" size={16} />
+        Export saved calendar
       </button>
     </section>
   );
