@@ -45,6 +45,7 @@ export function TripChat({
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const stopFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmounted = useRef(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -53,6 +54,7 @@ export function TripChat({
   useEffect(() => {
     return () => {
       unmounted.current = true;
+      if (stopFallback.current) clearTimeout(stopFallback.current);
       if (recorder.current?.state !== "inactive") recorder.current?.stop();
       stream.current?.getTracks().forEach((track) => track.stop());
     };
@@ -189,7 +191,25 @@ export function TripChat({
     }
   }
   function stopRecording() {
-    if (recorder.current?.state !== "inactive") recorder.current?.stop();
+    const currentRecorder = recorder.current;
+    setRecording(false);
+    if (!currentRecorder || currentRecorder.state === "inactive") {
+      stream.current?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+      recorder.current = null;
+      chunks.current = [];
+      return;
+    }
+    currentRecorder.requestData();
+    currentRecorder.stop();
+    stopFallback.current = setTimeout(() => {
+      if (recorder.current === currentRecorder) {
+        stream.current?.getTracks().forEach((track) => track.stop());
+        stream.current = null;
+        recorder.current = null;
+        chunks.current = [];
+      }
+    }, 1500);
   }
   async function toggleRecording() {
     if (recording) {
@@ -214,9 +234,11 @@ export function TripChat({
       });
       nextRecorder.addEventListener("stop", () => {
         if (unmounted.current) return;
+        if (stopFallback.current) clearTimeout(stopFallback.current);
         setRecording(false);
         stream.current?.getTracks().forEach((track) => track.stop());
         stream.current = null;
+        recorder.current = null;
         const audio = new Blob(chunks.current, {
           type: nextRecorder.mimeType || "audio/webm",
         });
