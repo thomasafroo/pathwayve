@@ -64,7 +64,12 @@ export function WeatherCard({
   weather?: WeatherContext[];
   advice?: BringAdvice;
 }) {
-  if (!weather?.length) return null;
+  if (!weather?.length)
+    return (
+      <p className="hint">
+        No weather forecast for this trip. Forecasts cover the next 16 days.
+      </p>
+    );
   const sample = weather.filter((_, index) =>
     weather.length <= 3 ? true : index % Math.ceil(weather.length / 3) === 0,
   );

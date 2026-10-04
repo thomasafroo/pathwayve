@@ -29,8 +29,9 @@ function toIsoHour(time: string) {
 }
 
 export function weatherMode(): "off" | "live" {
+  // Open-Meteo needs no key, so forecasts are on unless explicitly turned off.
   const mode = process.env.WEATHER_DATA_MODE?.trim();
-  if (!mode) return "off";
+  if (!mode) return "live";
   if (mode === "off" || mode === "live") return mode;
   throw new AppError(
     "CONFIGURATION",

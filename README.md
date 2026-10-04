@@ -35,8 +35,8 @@ Without a server key, “Load sample trip” demonstrates fictional stops and es
 travel. The browser map alone does not enable internet place search or real routes.
 Live failures are shown rather than replaced with samples.
 
-Set `WEATHER_DATA_MODE=live` to add Open-Meteo hourly destination weather to live
-plans. Weather is fetched as structured forecast data; no LLM generates or
+Plans include Open-Meteo hourly destination weather by default (no API key); set
+`WEATHER_DATA_MODE=off` to disable it. Weather is fetched as structured forecast data; no LLM generates or
 interprets conditions. The backend also turns those facts into playful
 deterministic “what to bring” advice.
 

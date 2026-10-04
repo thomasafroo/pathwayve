@@ -12,7 +12,8 @@ DATA_MODE=demo
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=website_restricted_map_key
 NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=DEMO_MAP_ID
 GOOGLE_MAPS_SERVER_API_KEY=separate_server_key
-WEATHER_DATA_MODE=off
+# Optional: weather is on by default; set to off to disable Open-Meteo forecasts.
+WEATHER_DATA_MODE=
 ```
 
 The browser key enables **Maps JavaScript API**. Restrict it to that API and your
@@ -36,8 +37,8 @@ Google references: [Maps JavaScript setup](https://developers.google.com/maps/do
 [Places Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search),
 [transit routing](https://developers.google.com/maps/documentation/routes/transit-route).
 
-Set `WEATHER_DATA_MODE=live` to attach Open-Meteo hourly destination forecasts to
-live plans. Forecast failures are reported as warnings and never replaced with
+Plans attach Open-Meteo hourly destination forecasts by default; set
+`WEATHER_DATA_MODE=off` to disable them. Forecast failures are reported as warnings and never replaced with
 sample conditions. Demo weather controls remain simulated.
 
 ## User control
