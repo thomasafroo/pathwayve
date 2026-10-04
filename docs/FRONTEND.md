@@ -12,6 +12,7 @@ DATA_MODE=demo
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=website_restricted_map_key
 NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=DEMO_MAP_ID
 GOOGLE_MAPS_SERVER_API_KEY=separate_server_key
+WEATHER_DATA_MODE=off
 ```
 
 The browser key enables **Maps JavaScript API**. Restrict it to that API and your
@@ -34,6 +35,10 @@ The application does not provision Google Cloud, change billing, or create keys.
 Google references: [Maps JavaScript setup](https://developers.google.com/maps/documentation/javascript/get-api-key),
 [Places Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search),
 [transit routing](https://developers.google.com/maps/documentation/routes/transit-route).
+
+Set `WEATHER_DATA_MODE=live` to attach Open-Meteo hourly destination forecasts to
+live plans. Forecast failures are reported as warnings and never replaced with
+sample conditions. Demo weather controls remain simulated.
 
 ## User control
 
@@ -143,6 +148,12 @@ State is in the tab. Download exports JSON; import and persistence are not
 implemented. Server version checks compare the submitted document; a future
 repository must provide authoritative version checks for concurrent clients.
 Public paid endpoints still need authentication and a shared rate limiter.
+
+When enabled, weather context is destination-level hourly forecast data for the
+planned window. It can warn about rain or snow and produces deterministic
+`bringAdvice` for clothing/accessories, but it does not yet change stop
+selection, routing, or durations. The same classifier is available at
+`POST /api/bring-advice` for refreshes without replanning.
 
 ## Verification
 

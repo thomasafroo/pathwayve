@@ -123,11 +123,64 @@ export const routeLegSchema = z.object({
     .optional(),
   warnings: z.array(z.string()).optional(),
 });
+export const weatherConditionSchema = z.enum([
+  "clear",
+  "cloudy",
+  "rain",
+  "snow",
+]);
+export const weatherContextSchema = z.object({
+  location: locationSchema,
+  forecastTime: z.iso.datetime({ offset: true }),
+  temperatureCelsius: z.number(),
+  precipitationProbability: z.number().min(0).max(100),
+  condition: weatherConditionSchema,
+});
+export const bringAdviceSchema = z.object({
+  warmth: z.enum([
+    "hot",
+    "warm",
+    "mild",
+    "hoodie",
+    "jacket",
+    "winter_jacket",
+    "freezing",
+  ]),
+  precipitation: z.enum([
+    "none",
+    "maybe_umbrella",
+    "bring_umbrella",
+    "rain_gear",
+    "snow_gear",
+  ]),
+  accessories: z.array(
+    z.enum([
+      "umbrella",
+      "rain_jacket",
+      "gloves_optional",
+      "gloves",
+      "hat",
+      "waterproof_shoes",
+    ]),
+  ),
+  message: z.string().min(1).max(300),
+  facts: z.object({
+    minTemperatureCelsius: z.number(),
+    maxPrecipitationProbability: z.number().min(0).max(100),
+    hasRain: z.boolean(),
+    hasSnow: z.boolean(),
+  }),
+});
+export const bringAdviceRequestSchema = z.object({
+  weather: z.array(weatherContextSchema).max(96),
+});
 export const tripStateSchema = z.object({
   id: z.string(),
   request: tripRequestSchema,
   stops: z.array(tripStopSchema).max(6),
   legs: z.array(routeLegSchema).max(7),
+  weather: z.array(weatherContextSchema).max(96).optional(),
+  bringAdvice: bringAdviceSchema.optional(),
   status: z.literal("ready"),
   source: z.enum(["demo", "live"]),
   summary: z.string().max(2000),
@@ -155,6 +208,8 @@ export type TripRequest = z.infer<typeof tripRequestSchema>;
 export type CandidatePlace = z.infer<typeof candidatePlaceSchema>;
 export type TripStop = z.infer<typeof tripStopSchema>;
 export type RouteLeg = z.infer<typeof routeLegSchema>;
+export type WeatherContext = z.infer<typeof weatherContextSchema>;
+export type BringAdvice = z.infer<typeof bringAdviceSchema>;
 export type TripState = z.infer<typeof tripStateSchema>;
 export type TripEvent = z.infer<typeof replanRequestSchema>["event"];
 export type ApiError = { error: { code: string; message: string } };

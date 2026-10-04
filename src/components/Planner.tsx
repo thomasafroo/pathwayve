@@ -16,6 +16,7 @@ import { ReplanControls } from "./ReplanControls";
 import { AddActivityDialog, AddStopDialog } from "./TripEditors";
 import { Icon } from "./Icon";
 import { formatTime } from "./StopCard";
+import { WeatherCard } from "./WeatherCard";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [state, setState] = useState<WorkspaceTrip | null>(null);
@@ -307,6 +308,10 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                     busy={busy}
                   />
                   <div className="context-column">
+                    <WeatherCard
+                      weather={trip.weather}
+                      advice={trip.bringAdvice}
+                    />
                     <ReplanControls
                       trip={trip}
                       busy={busy}
@@ -357,7 +362,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                   <p>
                     {trip.source === "demo"
                       ? "Edits use straight-line travel estimates. Weather events are simulated; no live forecast or AI planning is connected to this demo."
-                      : "Routes are calculated by Google for your selected transport mode. Transit availability depends on the requested dates."}{" "}
+                      : "Routes are calculated by Google for your selected transport mode. Weather comes from Open-Meteo when enabled; no AI forecast is generated."}{" "}
                     Your trip stays in this tab; download it before refreshing
                     if you want a copy.
                   </p>

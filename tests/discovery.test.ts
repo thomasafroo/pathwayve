@@ -113,6 +113,7 @@ describe("live geographic providers without Gemini", () => {
   beforeEach(() => {
     vi.stubEnv("MAPS_DATA_MODE", "live");
     vi.stubEnv("GOOGLE_MAPS_SERVER_API_KEY", "test-only");
+    vi.stubEnv("WEATHER_DATA_MODE", "off");
   });
   it.each(["driving", "walking", "transit"] as const)(
     "requests %s geometry and preserves steps",
@@ -253,5 +254,64 @@ describe("live geographic providers without Gemini", () => {
     expect(json.trip.legs).toHaveLength(2);
     expect(json.trip.source).toBe("live");
     expect(json.version).toBe(1);
+  });
+  it("attaches structured weather when enabled without calling a model", async () => {
+    vi.stubEnv("WEATHER_DATA_MODE", "live");
+    const fetch = vi.fn().mockImplementation((url: string | URL) => {
+      const value = String(url);
+      if (value.includes("open-meteo"))
+        return Promise.resolve(
+          Response.json({
+            hourly: {
+              time: [
+                "2030-10-03T19:00",
+                "2030-10-03T20:00",
+                "2030-10-03T21:00",
+              ],
+              temperature_2m: [13, 12.5, 12],
+              precipitation_probability: [20, 65, 80],
+              weather_code: [3, 61, 61],
+            },
+          }),
+        );
+      return Promise.resolve(Response.json({ routes: [response("600s")] }));
+    });
+    vi.stubGlobal("fetch", fetch);
+    const trip = await planTrip({
+      ...exampleRequest(),
+      selectedStops: [],
+      startTime: "2030-10-03T19:00:00Z",
+      endTime: "2030-10-03T22:00:00Z",
+    });
+    expect(trip.weather).toHaveLength(3);
+    expect(trip.weather?.[1]).toMatchObject({
+      temperatureCelsius: 12.5,
+      precipitationProbability: 65,
+      condition: "rain",
+    });
+    expect(trip.bringAdvice).toMatchObject({
+      warmth: "hoodie",
+      precipitation: "rain_gear",
+      accessories: ["umbrella", "rain_jacket"],
+    });
+    expect(trip.warnings[0]).toContain("rain risk up to 80%");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it("reports unavailable weather without fabricating conditions", async () => {
+    vi.stubEnv("WEATHER_DATA_MODE", "live");
+    const fetch = vi.fn().mockImplementation((url: string | URL) => {
+      if (String(url).includes("open-meteo"))
+        return Promise.resolve(new Response("{}", { status: 503 }));
+      return Promise.resolve(Response.json({ routes: [response("600s")] }));
+    });
+    vi.stubGlobal("fetch", fetch);
+    const trip = await planTrip({
+      ...exampleRequest(),
+      selectedStops: [],
+    });
+    expect(trip.weather).toBeUndefined();
+    expect(trip.warnings).toContain(
+      "Weather forecast is unavailable right now; no conditions were estimated.",
+    );
   });
 });
