@@ -6,13 +6,12 @@ import {
   type TripRequest,
   type TripState,
 } from "@/types/trip";
-import { classifyBringAdvice } from "./bring-advice";
 import { findPlaces } from "./places";
 
 import { scheduleTrip } from "./routes";
 import { mapsMode } from "./server/env";
 import { AppError } from "./server/http";
-import { openMeteoWeather, summarizeWeather, weatherMode } from "./weather";
+import { loadTripWeather } from "./weather";
 
 export async function planTrip(request: TripRequest): Promise<TripState> {
   if (
@@ -59,33 +58,18 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
           "Check venue opening hours and prices before leaving.",
           "Routes are planning estimates, not active navigation.",
         ];
-  let weather:
-    Awaited<ReturnType<typeof openMeteoWeather.forecast>> | undefined =
-    undefined;
-  if (weatherMode() === "live") {
-    try {
-      weather = await openMeteoWeather.forecast(
-        request.destination.location,
-        request.startTime,
-        request.endTime,
-      );
-      warnings.unshift(...summarizeWeather(weather));
-      if (!weather.length)
-        warnings.push("Weather forecast is unavailable for this trip window.");
-    } catch {
-      warnings.push(
-        "Weather forecast is unavailable right now; no conditions were estimated.",
-      );
-    }
-  }
+  const { warnings: weatherWarnings, ...weatherDetails } =
+    await loadTripWeather(
+      request.destination.location,
+      request.startTime,
+      request.endTime,
+    );
+  warnings.unshift(...weatherWarnings);
   return tripStateSchema.parse({
     id: crypto.randomUUID(),
     request: { ...request, selectedStops: scheduled.stops },
     ...scheduled,
-    ...(weather ? { weather } : {}),
-    ...(weather
-      ? { bringAdvice: classifyBringAdvice(weather) ?? undefined }
-      : {}),
+    ...weatherDetails,
     status: "ready",
     source: mapsMode(),
     summary:

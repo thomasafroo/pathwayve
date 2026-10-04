@@ -9,6 +9,7 @@ import {
 import {
   type CandidatePlace,
   type RouteLeg,
+  type TripRequest,
   type TripStop,
   tripStateSchema,
 } from "@/types/trip";
@@ -17,6 +18,7 @@ import { searchPlaces } from "./place-search";
 import { computeScheduleLeg } from "./schedule-routing";
 import { mapsMode } from "./server/env";
 import { AppError } from "./server/http";
+import { loadTripWeather } from "./weather";
 
 export async function materializeSchedule(
   draft: GeneratedSchedule,
@@ -88,7 +90,7 @@ export async function materializeSchedule(
       }
     }
   }
-  const request = {
+  const request: TripRequest = {
     origin: {
       name: origin.name,
       location: origin.location,
@@ -312,6 +314,15 @@ export async function materializeSchedule(
     result.warnings.push(
       "The proposed order cannot fit every required constraint. Adjust the window or activities and generate a new schedule.",
     );
+  const weatherResult = failed
+    ? { warnings: [] }
+    : await loadTripWeather(
+        destination.location,
+        request.startTime,
+        request.endTime,
+      );
+  const { warnings: weatherWarnings, ...weatherDetails } = weatherResult;
+  result.warnings.unshift(...weatherWarnings);
   if (!failed) {
     result.map_trip = tripStateSchema.parse({
       id,
@@ -322,6 +333,7 @@ export async function materializeSchedule(
       source,
       summary: intent.name,
       warnings: [...result.warnings],
+      ...weatherDetails,
       arrivalTime: result.destination_arrival_at,
       lastUpdated: now,
     });

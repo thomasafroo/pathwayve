@@ -73,6 +73,7 @@ afterAll(async () => {
 beforeEach(() => {
   vi.mocked(computeLeg).mockClear();
   vi.stubEnv("MAPS_DATA_MODE", "demo");
+  vi.stubEnv("WEATHER_DATA_MODE", "off");
 });
 
 describe("Gemini schedule validation", () => {
@@ -102,6 +103,34 @@ describe("Gemini schedule validation", () => {
 });
 
 describe("placing saved intentions", () => {
+  it("attaches weather to Gemini-created map trips and workspaces", async () => {
+    vi.stubEnv("WEATHER_DATA_MODE", "live");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          hourly: {
+            time: ["2030-10-04T20:00", "2030-10-04T21:00", "2030-10-04T22:00"],
+            temperature_2m: [13, 12, 11],
+            precipitation_probability: [10, 60, 75],
+            weather_code: [3, 61, 61],
+          },
+        }),
+      ),
+    );
+    const { document, workspace } = await materializeSchedule(
+      scheduleIntent(),
+      owner,
+    );
+    const mapTrip = document.schedule_runs[0].result.map_trip;
+    expect(mapTrip?.weather).toHaveLength(3);
+    expect(mapTrip?.bringAdvice).toMatchObject({
+      warmth: "hoodie",
+      precipitation: "rain_gear",
+    });
+    expect(mapTrip?.warnings[0]).toContain("rain risk up to 75%");
+    expect(workspace?.trip.weather).toEqual(mapTrip?.weather);
+  });
   it("handles an activity at the origin without requesting a route to itself", async () => {
     const draft = scheduleIntent();
     Object.assign(draft.schedule_items[0], {

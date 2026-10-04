@@ -385,6 +385,10 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                 document={savedDocument}
                 onClose={() => setSavedDocument(null)}
               />
+              <WeatherCard
+                weather={mapTrip?.weather}
+                advice={mapTrip?.bringAdvice}
+              />
             </div>
           </aside>
         )}
