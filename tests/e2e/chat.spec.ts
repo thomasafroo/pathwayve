@@ -71,6 +71,7 @@ const document = {
           ],
         },
         placements: [],
+        travel_legs: [],
         unscheduled_items: [
           { item_id: "item-1", reason: "Choose a quiet place to study." },
         ],
@@ -85,15 +86,30 @@ async function openChat(page: import("@playwright/test").Page) {
   return page.getByRole("region", { name: "Trip chat", exact: true });
 }
 
-test("chat panel sends prompt, saves, and reopens after refresh", async ({
+test("chat panel previews a schedule, then explicitly saves and reopens it", async ({
   page,
 }, testInfo) => {
   let saved = false;
   let requestBody: Record<string, unknown> = {};
+  await page.route("**/api/auth/get-session**", (route) =>
+    route.fulfill({
+      json: {
+        user: {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Alice",
+          email: "alice@example.com",
+        },
+        session: { id: "test-session", expiresAt: "2099-01-01T00:00:00Z" },
+      },
+    }),
+  );
+  await page.route("**/api/schedules/preview", async (route) => {
+    requestBody = route.request().postDataJSON();
+    await route.fulfill({ json: { document, workspace: null } });
+  });
   await page.route("**/api/schedules", async (route) => {
     if (route.request().method() === "POST") {
-      requestBody = route.request().postDataJSON();
-
+      saved = true;
       await route.fulfill({ json: { document, workspace: null } });
     } else
       await route.fulfill({
@@ -102,12 +118,8 @@ test("chat panel sends prompt, saves, and reopens after refresh", async ({
           : [],
       });
   });
-  await page.route("**/api/schedules/save", (route) => {
-    saved = true;
-    return route.fulfill({ json: document });
-  });
   await page.route(`**/api/schedules/${id}`, (route) =>
-    route.fulfill({ json: document }),
+    route.fulfill({ json: { document, workspace: null } }),
   );
   await page.goto("/");
   const chat = await openChat(page);
@@ -115,11 +127,12 @@ test("chat panel sends prompt, saves, and reopens after refresh", async ({
     .getByLabel("Chat message")
     .fill("Coffee then study tomorrow from SFU to downtown.");
   await chat.getByRole("button", { name: "Send message" }).click();
-  await expect(chat).toContainText("Draft “Coffee and study time”");
+  await expect(chat).toContainText("Planned “Coffee and study time”");
   expect(saved).toBe(false);
   await page
     .getByRole("button", { name: "Save schedule", exact: true })
     .click();
+  await expect(page.getByText("Saved to your account.")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Delete schedule", exact: true }),
   ).toBeVisible();
@@ -141,11 +154,8 @@ test("chat panel sends prompt, saves, and reopens after refresh", async ({
     "Saved destination",
   );
   await page.reload();
-  const reopened = await openChat(page);
-  await reopened
-    .getByRole("button", { name: "Saved schedules (1)", exact: true })
-    .click();
-  await reopened.getByRole("button", { name: /Coffee and study time/ }).click();
+  await page.getByRole("button", { name: "My schedules", exact: true }).click();
+  await page.getByRole("button", { name: /Coffee and study time/ }).click();
   await expect(
     page.getByRole("region", { name: "Saved schedule details" }),
   ).toBeVisible();
@@ -162,7 +172,7 @@ test("clarifications retain the original request and failures can be retried", a
   page,
 }) => {
   const requests: { prompt: string; requestId: string }[] = [];
-  await page.route("**/api/schedules", async (route) => {
+  await page.route("**/api/schedules/preview", async (route) => {
     if (route.request().method() === "GET") return route.fulfill({ json: [] });
     requests.push(route.request().postDataJSON());
     if (requests.length === 1)
@@ -205,8 +215,7 @@ test("chat uses current sidebar stops and mode before a manual trip is created",
     constraints: import("../../src/types/planning-constraints").PlanningConstraints;
     requestId: string;
   }[] = [];
-  await page.route("**/api/schedules", async (route) => {
-    if (route.request().method() === "GET") return route.fulfill({ json: [] });
+  await page.route("**/api/schedules/preview", async (route) => {
     requests.push(route.request().postDataJSON());
     return route.fulfill({
       status: 502,

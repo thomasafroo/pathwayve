@@ -1,4 +1,12 @@
 import { expect, test } from "@playwright/test";
+
+// Typing before hydration races React's replay of the input event. The header's
+// session check is requested from an effect, so it only fires once hydrated.
+async function gotoHydrated(page: import("@playwright/test").Page) {
+  const hydrated = page.waitForRequest("**/api/auth/get-session");
+  await page.goto("/");
+  await hydrated;
+}
 test("plan a day and replan while preserving a locked stop", async ({
   page,
 }, testInfo) => {
@@ -264,7 +272,7 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
 test("four planner states keep chat messages and resize when the itinerary opens", async ({
   page,
 }, testInfo) => {
-  await page.route("**/api/schedules", (route) =>
+  await page.route("**/api/schedules/preview", (route) =>
     route.request().method() === "GET"
       ? route.fulfill({ json: [] })
       : route.fulfill({
@@ -327,11 +335,12 @@ test("mobile planner remains usable with chat and itinerary", async ({
   await expect(
     page.getByRole("region", { name: "Trip chat", exact: true }),
   ).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  // The itinerary animates in; measure the settled responsive layout.
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
   await page.screenshot({
     path: testInfo.outputPath("mobile.png"),
     fullPage: true,
@@ -480,7 +489,7 @@ test("typing suggests places, keyboard selection resolves coordinates, and sessi
       },
     });
   });
-  await page.goto("/");
+  await gotoHydrated(page);
   const input = page.getByRole("combobox", {
     name: "Search starting point",
     exact: true,
@@ -550,7 +559,7 @@ test("late suggestions cannot replace a newer query or reopen after dismissal", 
       })
       .catch(() => {});
   });
-  await page.goto("/");
+  await gotoHydrated(page);
   const input = page.getByRole("combobox", {
     name: "Search starting point",
     exact: true,
@@ -588,8 +597,7 @@ test("drag, arrows and optimization automatically update without Gemini", async 
   let geminiCalls = 0;
   page.on("request", (request) => {
     if (request.url().endsWith("/api/plan")) plans.push(request.postDataJSON());
-    if (request.url().endsWith("/api/schedules") && request.method() === "POST")
-      geminiCalls++;
+    if (request.url().endsWith("/api/schedules/preview")) geminiCalls++;
   });
   await page.addInitScript(() => {
     const original = DataTransfer.prototype.setDragImage;

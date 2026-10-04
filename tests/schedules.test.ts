@@ -328,11 +328,13 @@ describe("manual schedule lifecycle", () => {
     ).toHaveLength(0);
   });
   it("copies a draft with fresh IDs and retains its route snapshot", async () => {
-    const { copyDocument, documentSchema } =
-      await import("@/lib/schedule-snapshots");
+    const { ownedSnapshot } = await import("@/lib/schedule-snapshot");
     const { document } = await materializeSchedule(scheduleIntent(), owner);
     const newOwner = randomUUID();
-    const copy = copyDocument(documentSchema.parse(document), newOwner);
+    const copy = ownedSnapshot(
+      { requestId: randomUUID(), document, workspace: null },
+      newOwner,
+    );
     expect(copy.schedules[0].id).not.toBe(document.schedules[0].id);
     expect(copy.schedules[0].user_id).toBe(newOwner);
     await saveSchedule(database, copy, randomUUID());

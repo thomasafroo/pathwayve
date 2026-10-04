@@ -8,7 +8,6 @@ import { Icon } from "./Icon";
 import type { PlanningConstraints } from "@/types/planning-constraints";
 
 export type ChatMessage = { role: "user" | "assistant"; text: string };
-type SavedSummary = { id: string; name: string; status: string };
 
 export function TripChat({
   compact,
@@ -31,16 +30,15 @@ export function TripChat({
   onSaved: (
     document: ScheduleDocument,
     workspace: WorkspaceTrip | null,
-    persisted?: boolean,
   ) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState<SavedSummary[]>([]);
-  const [showSaved, setShowSaved] = useState(false);
-  const [ready, setReady] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [listening, setListening] = useState(false);
   // Clarification turns sent back to Gemini with the next prompt.
   const [conversation, setConversation] = useState<string[]>([]);
   const requestId = useRef<string | null>(null);
@@ -65,39 +63,37 @@ export function TripChat({
     observer.observe(input);
     return () => observer.disconnect();
   }, [draft, compact]);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const chunks = useRef<Blob[]>([]);
+  const stopFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxRecordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const silenceFrame = useRef<number | null>(null);
+  const audioContext = useRef<AudioContext | null>(null);
+  const unmounted = useRef(false);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
   }, [messages, error]);
   useEffect(() => {
-    let active = true;
-    const refreshSaved = () =>
-      fetch("/api/schedules")
-        .then(async (response) => {
-          const data = await response.json();
-          if (!response.ok)
-            throw new Error(
-              data.error?.message || "Saved schedules are unavailable.",
-            );
-          if (active) setSaved(data);
-        })
-        .catch((err) => {
-          if (active) setError(err.message);
-        })
-        .finally(() => {
-          if (active) setReady(true);
-        });
-    void refreshSaved();
-    window.addEventListener("schedules-changed", refreshSaved);
+    // React Strict Mode runs this effect's cleanup once during development.
+    // Reset the flag when the effect is active so completed recordings are not
+    // mistaken for events from an unmounted component.
+    unmounted.current = false;
     return () => {
-      active = false;
-      window.removeEventListener("schedules-changed", refreshSaved);
+      unmounted.current = true;
+      if (stopFallback.current) clearTimeout(stopFallback.current);
+      if (maxRecordingTimer.current) clearTimeout(maxRecordingTimer.current);
+      if (silenceFrame.current) cancelAnimationFrame(silenceFrame.current);
+      void audioContext.current?.close();
+      if (recorder.current?.state !== "inactive") recorder.current?.stop();
+      stream.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
   async function submit(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (busy || sending.current || !text || !ready) return;
+    if (busy || transcribing || sending.current || !text) return;
     sending.current = true;
     onBusy(true);
     setPlanning(true);
@@ -115,7 +111,7 @@ export function TripChat({
         throw new Error(
           "Please start a shorter request (up to 4,000 characters).",
         );
-      const response = await fetch("/api/schedules", {
+      const response = await fetch("/api/schedules/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,7 +126,7 @@ export function TripChat({
       if (!response.ok)
         throw new Error(
           data.error?.message ||
-            "We couldn’t generate your schedule. Please try again.",
+            "We couldn’t plan your schedule. Please try again.",
         );
       if (data.clarification) {
         onMessages((previous) => [
@@ -171,48 +167,175 @@ export function TripChat({
           text:
             changeSummary +
             (run.status === "feasible"
-              ? `Draft “${schedule.name}” is ready. Review it, then choose Save schedule to keep it.`
-              : `Draft “${schedule.name}” includes activities that still need planning. Review the conflicts before saving.`),
+              ? `Planned “${schedule.name}”. Review your itinerary, then press Save schedule to keep it in your account.`
+              : `Planned “${schedule.name}”, including activities that still need planning. Review the conflicts before saving.`),
         },
       ]);
       setDraft("");
       setConversation([]);
       requestId.current = null;
     } catch (err) {
-      // Keep the prompt so the user can retry generation.
-      setError(
-        err instanceof Error ? err.message : "Unable to generate schedule.",
-      );
+      // Keep the draft and request id so a retry is idempotent.
+      setError(err instanceof Error ? err.message : "Unable to plan schedule.");
     } finally {
       sending.current = false;
       setPlanning(false);
       onBusy(false);
     }
   }
-  async function load(id: string) {
-    if (busy || sending.current) return;
-    sending.current = true;
-    onBusy(true);
+  async function transcribe(audio: Blob) {
+    setTranscribing(true);
     setError("");
     try {
-      const response = await fetch(`/api/schedules/${id}`);
+      const form = new FormData();
+      form.append(
+        "audio",
+        audio,
+        `pathwayve-voice.${audio.type.includes("mp4") ? "m4a" : "webm"}`,
+      );
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        body: form,
+      });
       const data = await response.json();
       if (!response.ok)
-        throw new Error(data.error?.message || "Unable to open this schedule.");
-      onSaved(data, null, true);
-      setShowSaved(false);
-      onMessages((previous) => [
-        ...previous,
-        {
-          role: "assistant",
-          text: "Opened your saved schedule. Travel estimates reflect its last calculation.",
-        },
-      ]);
+        throw new Error(data.error?.message || "Voice transcription failed.");
+      const text = String(data.text || "").trim();
+      if (!text) throw new Error("No speech was detected.");
+      setDraft((current) => [current.trim(), text].filter(Boolean).join(" "));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to open schedule.");
+      setError(
+        err instanceof Error ? err.message : "Voice transcription failed.",
+      );
     } finally {
-      sending.current = false;
-      onBusy(false);
+      setTranscribing(false);
+    }
+  }
+  function stopRecording() {
+    const currentRecorder = recorder.current;
+    setRecording(false);
+    setListening(false);
+    if (maxRecordingTimer.current) clearTimeout(maxRecordingTimer.current);
+    if (silenceFrame.current) cancelAnimationFrame(silenceFrame.current);
+    void audioContext.current?.close();
+    audioContext.current = null;
+    if (!currentRecorder || currentRecorder.state === "inactive") {
+      stream.current?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+      recorder.current = null;
+      chunks.current = [];
+      return;
+    }
+    try {
+      currentRecorder.requestData();
+      currentRecorder.stop();
+    } catch {
+      stream.current?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+      recorder.current = null;
+      chunks.current = [];
+      setError("Could not finish voice input. Try again.");
+      return;
+    }
+    stopFallback.current = setTimeout(() => {
+      if (recorder.current === currentRecorder) {
+        stream.current?.getTracks().forEach((track) => track.stop());
+        stream.current = null;
+        recorder.current = null;
+        chunks.current = [];
+        setError("Could not finish voice input. Try again.");
+      }
+    }, 3000);
+  }
+  function monitorSilence(nextStream: MediaStream) {
+    const AudioContextClass =
+      window.AudioContext ??
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass({ sampleRate: 16_000 });
+    audioContext.current = context;
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 1024;
+    context.createMediaStreamSource(nextStream).connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    let heardSpeech = false,
+      silentSince = 0;
+    const tick = () => {
+      analyser.getByteTimeDomainData(samples);
+      const volume =
+        samples.reduce((sum, sample) => sum + Math.abs(sample - 128), 0) /
+        samples.length;
+      if (volume > 3) {
+        heardSpeech = true;
+        silentSince = 0;
+      } else if (heardSpeech) silentSince ||= performance.now();
+
+      if (heardSpeech && silentSince && performance.now() - silentSince > 1400)
+        stopRecording();
+      else silenceFrame.current = requestAnimationFrame(tick);
+    };
+    silenceFrame.current = requestAnimationFrame(tick);
+  }
+  async function toggleRecording() {
+    if (recording) {
+      stopRecording();
+      return;
+    }
+    if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") {
+      setError("Voice input is not supported in this browser.");
+      return;
+    }
+    setError("");
+    try {
+      chunks.current = [];
+      const nextStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      stream.current = nextStream;
+      const nextRecorder = new MediaRecorder(nextStream);
+      recorder.current = nextRecorder;
+      nextRecorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size) chunks.current.push(event.data);
+      });
+      nextRecorder.addEventListener("stop", () => {
+        if (stopFallback.current) clearTimeout(stopFallback.current);
+        if (maxRecordingTimer.current) clearTimeout(maxRecordingTimer.current);
+        if (silenceFrame.current) cancelAnimationFrame(silenceFrame.current);
+        void audioContext.current?.close();
+        audioContext.current = null;
+        stream.current?.getTracks().forEach((track) => track.stop());
+        stream.current = null;
+        recorder.current = null;
+        const audio = new Blob(chunks.current, {
+          type: nextRecorder.mimeType || "audio/webm",
+        });
+        chunks.current = [];
+        if (unmounted.current) return;
+        setRecording(false);
+        setListening(false);
+        if (audio.size) void transcribe(audio);
+        else setError("No audio was captured. Try again.");
+      });
+      nextRecorder.addEventListener("error", () => {
+        stopRecording();
+        setError("Voice recording failed. Try again.");
+      });
+      // A timeslice ensures audio is available even when a browser delays the
+      // final dataavailable event until recording has fully stopped.
+      nextRecorder.start(250);
+      setRecording(true);
+      setListening(true);
+      monitorSilence(nextStream);
+      maxRecordingTimer.current = setTimeout(stopRecording, 20_000);
+    } catch (err) {
+      setRecording(false);
+      setListening(false);
+      setError(
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Allow microphone access to use voice input."
+          : "Could not start voice input.",
+      );
     }
   }
   function startOver() {
@@ -240,14 +363,6 @@ export function TripChat({
           Plan with PathWayve
         </h2>
         <div className="chat-header-actions">
-          <button
-            type="button"
-            className="text-button"
-            aria-expanded={showSaved}
-            onClick={() => setShowSaved(!showSaved)}
-          >
-            Saved schedules ({saved.length})
-          </button>
           {messages.length > 0 && (
             <button
               type="button"
@@ -268,25 +383,6 @@ export function TripChat({
           </button>
         </div>
       </header>
-      {showSaved && (
-        <div className="saved-schedule-list" aria-label="Saved schedules">
-          {saved.length ? (
-            saved.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                disabled={busy}
-                onClick={() => void load(item.id)}
-              >
-                <strong>{item.name}</strong>
-                <span>{item.status}</span>
-              </button>
-            ))
-          ) : (
-            <p>Your saved schedules will appear here in this browser.</p>
-          )}
-        </div>
-      )}
       <div className="chat-messages" role="log" aria-label="Conversation">
         {!messages.length && (
           <p className="chat-empty">
@@ -301,6 +397,14 @@ export function TripChat({
         ))}
         {planning && (
           <p className="chat-message assistant pending">Planning…</p>
+        )}
+        {listening && (
+          <p className="chat-message assistant pending">
+            Listening… pause or tap the mic to finish.
+          </p>
+        )}
+        {transcribing && (
+          <p className="chat-message assistant pending">Transcribing…</p>
         )}
         {error && (
           <p className="chat-error" role="alert">
@@ -332,17 +436,28 @@ export function TripChat({
           placeholder="Describe your day"
           maxLength={4000}
           value={draft}
-          disabled={busy}
+          disabled={busy || transcribing}
           onChange={(event) => {
             setDraft(event.target.value);
             requestId.current = null;
           }}
         />
         <button
+          type="button"
+          className={`voice-button ${recording ? "recording" : ""}`}
+          disabled={busy || transcribing}
+          aria-label={recording ? "Stop voice input" : "Start voice input"}
+          title={recording ? "Stop voice input" : "Start voice input"}
+          aria-pressed={recording}
+          onClick={() => void toggleRecording()}
+        >
+          <Icon name={recording ? "close" : "mic"} size={15} />
+        </button>
+        <button
           type="submit"
-          disabled={!ready || busy || !draft.trim()}
+          disabled={busy || transcribing || !draft.trim()}
           aria-label="Send message"
-          title="Generate a draft schedule"
+          title={transcribing ? "Transcribing voice" : "Generate schedule"}
         >
           <Icon name="send" size={15} />
         </button>

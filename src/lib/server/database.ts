@@ -1,7 +1,9 @@
 import "server-only";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { Kysely, PostgresDialect, CompiledQuery } from "kysely";
 import { PGlite } from "@electric-sql/pglite";
+import { pgliteDialect } from "./pglite-dialect";
 import { Pool } from "pg";
 import { AppError } from "./http";
 
@@ -12,7 +14,22 @@ export interface SqlConnection {
   ): Promise<{ rows: T[] }>;
 }
 export interface Database extends SqlConnection {
+  authDb?: Kysely<Record<string, never>>;
   transaction<T>(work: (connection: SqlConnection) => Promise<T>): Promise<T>;
+}
+function wrap(db: Kysely<Record<string, never>>): Database {
+  return {
+    authDb: db,
+    query: (sql, params = []) =>
+      db.executeQuery(CompiledQuery.raw(sql, params)),
+    transaction: (work) =>
+      db.transaction().execute((tx) =>
+        work({
+          query: (sql, params = []) =>
+            tx.executeQuery(CompiledQuery.raw(sql, params)),
+        }),
+      ),
+  };
 }
 const globalDb = globalThis as typeof globalThis & {
   pathwayveDatabase?: Promise<Database>;
@@ -26,23 +43,7 @@ async function connect(): Promise<Database> {
       connectionTimeoutMillis: 10000,
       statement_timeout: 15000,
     });
-    return {
-      query: (sql, params) => pool.query(sql, params),
-      async transaction(work) {
-        const client = await pool.connect();
-        try {
-          await client.query("BEGIN");
-          const value = await work(client);
-          await client.query("COMMIT");
-          return value;
-        } catch (error) {
-          await client.query("ROLLBACK");
-          throw error;
-        } finally {
-          client.release();
-        }
-      },
-    };
+    return wrap(new Kysely({ dialect: new PostgresDialect({ pool }) }));
   }
   if (process.env.NODE_ENV === "production")
     throw new AppError(
@@ -55,14 +56,13 @@ async function connect(): Promise<Database> {
       ".pathwayve/database",
   );
   await mkdir(dirname(dataDir), { recursive: true });
-  const db = new PGlite(dataDir);
-  await db.exec(
-    await readFile(resolve("db/migrations/001_schedules.sql"), "utf8"),
-  );
-  return {
-    query: (sql, params) => db.query(sql, params),
-    transaction: (work) => db.transaction(work),
-  };
+  const client = await PGlite.create(dataDir);
+  for (const file of (await readdir(resolve("db/migrations")))
+    .filter((f) => f.endsWith(".sql"))
+    .sort()) {
+    await client.exec(await readFile(resolve("db/migrations", file), "utf8"));
+  }
+  return wrap(new Kysely({ dialect: pgliteDialect(client) }));
 }
 export function getDatabase() {
   globalDb.pathwayveDatabase ??= connect().catch((error) => {

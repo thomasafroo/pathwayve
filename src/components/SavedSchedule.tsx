@@ -2,14 +2,15 @@
 import { Fragment } from "react";
 import type { ScheduleDocument } from "@/types/schedule";
 import { TravelLeg } from "./TravelLeg";
+import { downloadCalendar, savedScheduleCalendar } from "@/lib/calendar";
+import { Icon } from "./Icon";
 
 export function SavedSchedule({
   document,
   onClose,
   showRoute = true,
-  persisted = true,
+  persisted = false,
   onImport,
-  onSave,
   onDelete,
   busy = false,
 }: {
@@ -17,9 +18,9 @@ export function SavedSchedule({
   onClose: () => void;
   // Off when the editable itinerary below already shows the same legs.
   showRoute?: boolean;
+  // True once this snapshot is stored in the signed-in user's account.
   persisted?: boolean;
   onImport?: () => void;
-  onSave?: () => void;
   onDelete?: () => void;
   busy?: boolean;
 }) {
@@ -115,9 +116,10 @@ export function SavedSchedule({
         </p>
       ))}
       <p className="hint">
-        {persisted ? "Saved for this browser session." : "Not saved yet."}{" "}
+        {persisted
+          ? "Saved in your account."
+          : "Not saved yet. Press Save schedule to keep this version in your private account."}{" "}
         Calculated {time(run.calculated_at)}. Reopening does not refresh routes.
-        Manual workspace edits do not change this saved snapshot.
       </p>
       {!run.result.map_trip && run.status !== "failed" && (
         <p className="hint">
@@ -133,11 +135,6 @@ export function SavedSchedule({
             disabled={busy || !mapTrip}
           >
             Import places to planner
-          </button>
-        )}
-        {onSave && !persisted && (
-          <button className="primary" onClick={onSave} disabled={busy}>
-            Save schedule
           </button>
         )}
         {onDelete && persisted && (
@@ -157,6 +154,23 @@ export function SavedSchedule({
         )}
       <button className="secondary" type="button" onClick={download}>
         Download saved schedule JSON
+      </button>
+      <button
+        className="secondary"
+        type="button"
+        disabled={
+          run.status === "failed" ||
+          (!run.result.placements.length && !run.result.travel_legs.length)
+        }
+        onClick={() =>
+          downloadCalendar(
+            savedScheduleCalendar(document),
+            `pathwayve-saved-${schedule.id}`,
+          )
+        }
+      >
+        <Icon name="download" size={16} />
+        Export saved calendar
       </button>
     </section>
   );

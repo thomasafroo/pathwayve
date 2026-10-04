@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { tripRequestSchema, type TripState } from "./trip";
+import { tripRequestSchema, tripStateSchema, type TripState } from "./trip";
+import { workspaceSchema } from "./workspace";
 
 import { planningConstraintsSchema } from "./planning-constraints";
 
@@ -114,7 +115,6 @@ export type UnscheduledItem = {
   reason: string;
 };
 export type RunResult = {
-  workspace_snapshot?: import("./workspace").WorkspaceTrip;
   // Display-only snapshot, including provider geometry. Older saves may omit it.
   map_trip?: TripState;
   placements: Placement[];
@@ -146,6 +146,73 @@ export type ScheduleDocument = {
   schedule_items: SavedItem[];
   schedule_runs: SavedRun[];
 };
+
+export const scheduleDocumentSchema = z.object({
+  schema_version: z.literal(1),
+  schedules: z.array(savedScheduleSchema).length(1),
+  schedule_items: z.array(savedItemSchema).max(12),
+  schedule_runs: z
+    .array(
+      z.object({
+        id: z.uuid(),
+        schedule_id: z.uuid(),
+        schedule_version: z.number().int().positive(),
+        calculated_at: instant,
+        status: z.enum(["feasible", "infeasible", "failed"]),
+        result: z.object({
+          map_trip: tripStateSchema.optional(),
+          placements: z
+            .array(
+              z.object({
+                item_id: z.uuid(),
+                place_id: z.string(),
+                sequence: z.number().int().nonnegative(),
+                starts_at: instant,
+                ends_at: instant,
+              }),
+            )
+            .max(12),
+          travel_legs: z
+            .array(
+              z.object({
+                sequence: z.number().int().nonnegative(),
+                from_place_id: z.string(),
+                to_place_id: z.string(),
+                transportation: z.string(),
+                departs_at: instant,
+                arrives_at: instant,
+                duration_seconds: z.number().nonnegative(),
+                distance_meters: z.number().nonnegative(),
+              }),
+            )
+            .max(13),
+          unscheduled_items: z
+            .array(
+              z.object({
+                item_id: z.uuid(),
+                reason_code: z.string().max(100),
+                reason: z.string().max(2000),
+              }),
+            )
+            .max(12),
+          destination_arrival_at: instant.nullable(),
+          warnings: z.array(z.string().max(4000)).max(50),
+        }),
+      }),
+    )
+    .length(1),
+});
+export const saveRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    document: scheduleDocumentSchema.nullable(),
+    workspace: workspaceSchema.nullable(),
+  })
+  .refine(
+    (value) => value.document || value.workspace,
+    "Create a schedule before saving.",
+  );
+export type SaveRequest = z.infer<typeof saveRequestSchema>;
 
 export function validateIntent(value: unknown): GeneratedSchedule {
   const draft = generatedScheduleSchema.parse(value);

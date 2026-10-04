@@ -86,45 +86,66 @@ export function TripForm({
   const lastHover = useRef<string | null>(null);
   const changed = () => setRevision((value) => value + 1);
   const formRef = useRef<HTMLFormElement>(null);
-  const [origin, setOrigin] = useState<TripRequest["origin"] | null>(null),
+  const [origin, setOrigin] = useState<TripRequest["origin"] | null>(
+      currentTrip?.request.origin ?? null,
+    ),
     [destination, setDestination] = useState<TripRequest["destination"] | null>(
-      null,
+      currentTrip?.request.destination ?? null,
     );
   const [editing, setEditing] = useState<"origin" | "destination" | null>(
-    "origin",
+    currentTrip ? null : "origin",
   );
-  const [activities, setActivities] = useState<TripRequest["activities"]>([
-    "coffee",
-    "park",
-    "bookstore",
-    "food",
-  ]);
-  const [transportation, setTransportation] =
-    useState<TripRequest["transportation"]>("transit");
+  const [activities, setActivities] = useState<TripRequest["activities"]>(
+    currentTrip?.request.activities ?? ["coffee", "park", "bookstore", "food"],
+  );
+  const [transportation, setTransportation] = useState<
+    TripRequest["transportation"]
+  >(currentTrip?.request.transportation ?? "transit");
   const [selected, setSelected] = useState<
     NonNullable<TripRequest["selectedStops"]>
-  >([]);
+  >(
+    currentTrip?.stops.map((stop) => ({
+      ...stop,
+      priority: stop.priority ?? "optional",
+    })) ?? [],
+  );
   const [orderPolicy, setOrderPolicy] = useState<"preserve" | "optimize">(
-    "preserve",
+    currentTrip?.request.orderPolicy ?? "preserve",
   );
   const [favorites, setFavorites] = useState<CandidatePlace[]>([]);
-  const [interests, setInterests] = useState<string[]>([]);
-  const [notes, setNotes] = useState("");
-  const [routingPriority, setRoutingPriority] = useState("fastest");
+  const [interests, setInterests] = useState<string[]>(
+    currentTrip?.request.interestTags ?? [],
+  );
+  const [notes, setNotes] = useState(currentTrip?.request.preferences ?? "");
+  const [routingPriority, setRoutingPriority] = useState<string>(
+    currentTrip?.request.routingPriority ?? "fastest",
+  );
   const [radius, setRadius] = useState("1000");
-  const [startValue, setStartValue] = useState("");
-  const [endValue, setEndValue] = useState("");
+  const [startValue, setStartValue] = useState(() =>
+    currentTrip ? localDate(currentTrip.request.startTime) : "",
+  );
+  const [endValue, setEndValue] = useState(() =>
+    currentTrip ? localDate(currentTrip.request.endTime) : "",
+  );
   const [preferencesReady, setPreferencesReady] = useState(false);
-  const [budget, setBudget] = useState("any");
+  const [budget, setBudget] = useState<string>(
+    currentTrip?.request.budget ?? "any",
+  );
   const [error, setError] = useState("");
   const [findStops, setFindStops] = useState(false);
   const [suggestionMode, setSuggestionMode] = useState<"manual" | "suggest">(
-    "manual",
+    currentTrip?.request.suggestionMode ?? "manual",
   );
+  const openedTrip = useRef(!!currentTrip);
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
+      // An opened schedule supplies its own settings; saved defaults apply to new trips.
+      if (openedTrip.current) {
+        setPreferencesReady(true);
+        return;
+      }
       try {
         const parsed = storedPreferences.safeParse(
           JSON.parse(
