@@ -479,9 +479,9 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                   </button>
                 </div>
               </div>
+              <WeatherCard weather={trip.weather} advice={trip.bringAdvice} />
               <details className="itinerary-extras">
-                <summary>Weather and trip updates</summary>
-                <WeatherCard weather={trip.weather} advice={trip.bringAdvice} />
+                <summary>Trip updates</summary>
                 <ReplanControls trip={trip} busy={busy} onReplan={onReplan} />
               </details>
               <details className="data-note">
