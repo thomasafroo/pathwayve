@@ -23,7 +23,7 @@ test("plan a day and replan while preserving a locked stop", async ({
   await page
     .getByRole("button", { name: "Lock The Morning Cup", exact: true })
     .click();
-  await page.getByText("Weather and trip updates", { exact: true }).click();
+  await page.getByText("Trip updates", { exact: true }).click();
   await page.getByRole("button", { name: "Rain starts early" }).click();
   await expect(page.getByRole("status")).toContainText(
     "Demo rain event applied",
