@@ -7,14 +7,13 @@ import {
   type TripRequest,
   type TripState,
 } from "@/types/trip";
-import { classifyBringAdvice } from "./bring-advice";
 import { findPlaces } from "./places";
 
 import { optimizeStopOrder } from "./stop-order";
 import { scheduleTrip } from "./routes";
 import { mapsMode } from "./server/env";
 import { AppError } from "./server/http";
-import { googleWeather, summarizeWeather, weatherMode } from "./weather";
+import { loadTripWeather } from "./weather";
 
 export async function planTrip(request: TripRequest): Promise<TripState> {
   if (
@@ -91,32 +90,18 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
     warnings.push(
       `Compared ${optimized.evaluated} stop orders using ${mapsMode() === "live" ? "Google Routes travel times" : "demo estimates"}; chose the earliest arrival among available orders. Larger trips use a bounded search.`,
     );
-  let weather: Awaited<ReturnType<typeof googleWeather.forecast>> | undefined =
-    undefined;
-  if (weatherMode() === "live") {
-    try {
-      weather = await googleWeather.forecast(
-        request.destination.location,
-        request.startTime,
-        request.endTime,
-      );
-      warnings.unshift(...summarizeWeather(weather));
-      if (!weather.length)
-        warnings.push("Weather forecast is unavailable for this trip window.");
-    } catch {
-      warnings.push(
-        "Weather forecast is unavailable right now; no conditions were estimated.",
-      );
-    }
-  }
+  const { warnings: weatherWarnings, ...weatherDetails } =
+    await loadTripWeather(
+      request.destination.location,
+      request.startTime,
+      request.endTime,
+    );
+  warnings.unshift(...weatherWarnings);
   return tripStateSchema.parse({
     id: crypto.randomUUID(),
     request: { ...request, selectedStops: scheduled.stops },
     ...scheduled,
-    ...(weather ? { weather } : {}),
-    ...(weather
-      ? { bringAdvice: classifyBringAdvice(weather) ?? undefined }
-      : {}),
+    ...weatherDetails,
     status: "ready",
     source: mapsMode(),
     summary:

@@ -1,6 +1,35 @@
 import ICAL from "ical.js";
 import type { ScheduleDocument } from "@/types/schedule";
 import type { WorkspaceTrip } from "@/types/workspace";
+import type { CalendarEvent } from "@/types/calendar";
+
+export function calendarEventsFile(events: CalendarEvent[]) {
+  const calendar = new ICAL.Component("vcalendar");
+  calendar.updatePropertyWithValue("version", "2.0");
+  calendar.updatePropertyWithValue("prodid", "-//PathWayve//Calendar//EN");
+  for (const item of events) {
+    const event = new ICAL.Event();
+    event.uid = item.uid;
+    event.summary = item.title;
+    event.location = item.location;
+    event.startDate = item.allDay
+      ? ICAL.Time.fromString(item.dateStart!, undefined)
+      : ICAL.Time.fromJSDate(new Date(item.start), true);
+    event.endDate = item.allDay
+      ? ICAL.Time.fromString(item.dateEnd!, undefined)
+      : ICAL.Time.fromJSDate(new Date(item.end), true);
+    event.component.updatePropertyWithValue(
+      "transp",
+      item.busy ? "OPAQUE" : "TRANSPARENT",
+    );
+    event.component.updatePropertyWithValue(
+      "dtstamp",
+      ICAL.Time.fromJSDate(new Date(), true),
+    );
+    calendar.addSubcomponent(event.component);
+  }
+  return calendar.toString();
+}
 
 export const MAX_CALENDAR_BYTES = 1_000_000;
 
@@ -196,7 +225,10 @@ export function savedScheduleCalendar(document: ScheduleDocument) {
       end: leg.arrives_at,
     });
   });
-  return buildCalendar(events);
+  const planned = buildCalendar(events);
+  return run.result.calendar_events?.length
+    ? mergeCalendars(calendarEventsFile(run.result.calendar_events), planned)
+    : planned;
 }
 
 export function mergeCalendars(imported: string, planned: string) {

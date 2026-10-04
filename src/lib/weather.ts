@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
-import type { Location, WeatherContext } from "@/types/trip";
+import type { BringAdvice, Location, WeatherContext } from "@/types/trip";
+import { classifyBringAdvice } from "./bring-advice";
 import { requireEnv } from "./server/env";
 import { AppError } from "./server/http";
 
@@ -141,4 +142,34 @@ export function summarizeWeather(weather: WeatherContext[]) {
       `Forecast near the destination shows rain risk up to ${Math.round(maxPrecipitation)}%.`,
     );
   return warnings;
+}
+
+export async function loadTripWeather(
+  location: Location,
+  startTime: string,
+  endTime: string,
+): Promise<{
+  weather?: WeatherContext[];
+  bringAdvice?: BringAdvice;
+  warnings: string[];
+}> {
+  if (weatherMode() !== "live") return { warnings: [] };
+  try {
+    const weather = await googleWeather.forecast(location, startTime, endTime);
+    const warnings = summarizeWeather(weather);
+    if (!weather.length)
+      warnings.push("Weather forecast is unavailable for this trip window.");
+    const bringAdvice = classifyBringAdvice(weather) ?? undefined;
+    return {
+      weather,
+      ...(bringAdvice ? { bringAdvice } : {}),
+      warnings,
+    };
+  } catch {
+    return {
+      warnings: [
+        "Weather forecast is unavailable right now; no conditions were estimated.",
+      ],
+    };
+  }
 }

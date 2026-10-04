@@ -1,8 +1,12 @@
 import { z } from "zod";
 import { tripRequestSchema, tripStateSchema, type TripState } from "./trip";
 import { workspaceSchema } from "./workspace";
-
 import { planningConstraintsSchema } from "./planning-constraints";
+import {
+  calendarEventSchema,
+  calendarSelectionSchema,
+  type CalendarEvent,
+} from "./calendar";
 
 const instant = z.iso.datetime({ offset: true });
 const zone = z.string().refine((value) => {
@@ -73,6 +77,7 @@ export const promptRequestSchema = z.object({
   timeZone: zone,
   requestId: z.uuid(),
   context: tripRequestSchema.nullable().optional(),
+  googleCalendar: calendarSelectionSchema.nullable().optional(),
   constraints: planningConstraintsSchema.nullable().optional(),
 });
 export type PromptRequest = z.infer<typeof promptRequestSchema>;
@@ -115,6 +120,7 @@ export type UnscheduledItem = {
   reason: string;
 };
 export type RunResult = {
+  calendar_events?: CalendarEvent[];
   // Display-only snapshot, including provider geometry. Older saves may omit it.
   map_trip?: TripState;
   placements: Placement[];
@@ -160,6 +166,7 @@ export const scheduleDocumentSchema = z.object({
         calculated_at: instant,
         status: z.enum(["feasible", "infeasible", "failed"]),
         result: z.object({
+          calendar_events: z.array(calendarEventSchema).max(200).optional(),
           map_trip: tripStateSchema.optional(),
           placements: z
             .array(

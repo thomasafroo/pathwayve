@@ -22,6 +22,7 @@ import {
 import type { Database } from "@/lib/server/database";
 import { computeLeg } from "@/lib/routes";
 import { AppError } from "@/lib/server/http";
+import { googleWeather } from "@/lib/weather";
 
 vi.mock("@/lib/place-search", () => ({
   searchPlaces: vi.fn(async ({ query }: { query: string }) => ({
@@ -74,6 +75,7 @@ afterAll(async () => {
 beforeEach(() => {
   vi.mocked(computeLeg).mockClear();
   vi.stubEnv("MAPS_DATA_MODE", "demo");
+  vi.stubEnv("WEATHER_DATA_MODE", "off");
 });
 
 describe("Gemini schedule validation", () => {
@@ -103,6 +105,93 @@ describe("Gemini schedule validation", () => {
 });
 
 describe("placing saved intentions", () => {
+  const meeting = {
+    uid: "meeting@calendar",
+    title: "Meeting",
+    location: "",
+    start: "2030-10-04T20:05:00Z",
+    end: "2030-10-04T21:00:00Z",
+    busy: true,
+    allDay: false,
+  };
+  it("moves travel and flexible activities past calendar commitments", async () => {
+    const { document, workspace } = await materializeSchedule(
+      scheduleIntent(),
+      owner,
+      null,
+      [meeting],
+    );
+    const run = document.schedule_runs[0];
+    expect(run.status).toBe("feasible");
+    expect(workspace).toBeNull();
+    expect(run.result.placements[0].starts_at).toBe("2030-10-04T21:10:00.000Z");
+    expect(run.result.travel_legs[0].departs_at).toBe(
+      "2030-10-04T21:00:00.000Z",
+    );
+    expect(run.result.calendar_events).toEqual([meeting]);
+  });
+  it("rejects fixed appointments that overlap imported events", async () => {
+    const draft = scheduleIntent();
+    Object.assign(draft.schedule_items[0], {
+      priority: "required",
+      timing_type: "fixed",
+      fixed_start_at: "2030-10-04T20:30:00Z",
+    });
+    const { document } = await materializeSchedule(draft, owner, null, [
+      meeting,
+    ]);
+    expect(document.schedule_runs[0].status).toBe("infeasible");
+    expect(document.schedule_runs[0].result.placements).toHaveLength(0);
+  });
+  it("does not shift activities for Google events marked available", async () => {
+    const { document } = await materializeSchedule(
+      scheduleIntent(),
+      owner,
+      null,
+      [{ ...meeting, busy: false }],
+    );
+    expect(document.schedule_runs[0].result.placements[0].starts_at).toBe(
+      "2030-10-04T20:10:00.000Z",
+    );
+  });
+  it("attaches weather to Gemini-created map trips and workspaces", async () => {
+    vi.stubEnv("WEATHER_DATA_MODE", "live");
+    vi.spyOn(googleWeather, "forecast").mockResolvedValue([
+      {
+        location: { lat: 49.28, lng: -123.11 },
+        forecastTime: "2030-10-04T20:00:00.000Z",
+        temperatureCelsius: 13,
+        precipitationProbability: 10,
+        condition: "cloudy",
+      },
+      {
+        location: { lat: 49.28, lng: -123.11 },
+        forecastTime: "2030-10-04T21:00:00.000Z",
+        temperatureCelsius: 12,
+        precipitationProbability: 60,
+        condition: "rain",
+      },
+      {
+        location: { lat: 49.28, lng: -123.11 },
+        forecastTime: "2030-10-04T22:00:00.000Z",
+        temperatureCelsius: 11,
+        precipitationProbability: 75,
+        condition: "rain",
+      },
+    ]);
+    const { document, workspace } = await materializeSchedule(
+      scheduleIntent(),
+      owner,
+    );
+    const mapTrip = document.schedule_runs[0].result.map_trip;
+    expect(mapTrip?.weather).toHaveLength(3);
+    expect(mapTrip?.bringAdvice).toMatchObject({
+      warmth: "hoodie",
+      precipitation: "rain_gear",
+    });
+    expect(mapTrip?.warnings[0]).toContain("rain risk up to 75%");
+    expect(workspace?.trip.weather).toEqual(mapTrip?.weather);
+  });
   it("handles an activity at the origin without requesting a route to itself", async () => {
     const draft = scheduleIntent();
     Object.assign(draft.schedule_items[0], {

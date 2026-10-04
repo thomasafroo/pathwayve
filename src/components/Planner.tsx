@@ -26,12 +26,15 @@ import { AccountControls } from "./AccountControls";
 import type { CandidatePlace } from "@/types/trip";
 import { CalendarDialog } from "./CalendarDialog";
 import { savedScheduleCalendar, workspaceCalendar } from "@/lib/calendar";
+import type { CalendarSelection } from "@/types/calendar";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [documentSaved, setDocumentSaved] = useState(false);
   const tripForm = useRef<TripFormHandle>(null);
   const [formVersion, setFormVersion] = useState(0);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [googleCalendar, setGoogleCalendar] =
+    useState<CalendarSelection | null>(null);
   const [importedCalendar, setImportedCalendar] = useState<string | null>(null);
   const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -387,6 +390,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           )}
           {assistantOpen && (
             <TripChat
+              googleCalendar={googleCalendar}
+              onClearCalendar={() => setGoogleCalendar(null)}
               compact={showItinerary}
               messages={chatMessages}
               onMessages={setChatMessages}
@@ -476,6 +481,10 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                 onDelete={() => void deleteCurrent()}
                 busy={busy}
                 onClose={() => setSavedDocument(null)}
+              />
+              <WeatherCard
+                weather={mapTrip?.weather}
+                advice={mapTrip?.bringAdvice}
               />
             </div>
           </aside>
@@ -575,11 +584,13 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                   </button>
                 </div>
               </div>
-              <details className="itinerary-extras">
-                <summary>Weather and trip updates</summary>
-                <WeatherCard weather={trip.weather} advice={trip.bringAdvice} />
-                <ReplanControls trip={trip} busy={busy} onReplan={onReplan} />
-              </details>
+              <WeatherCard weather={trip.weather} advice={trip.bringAdvice} />
+              {trip.source === "demo" && (
+                <details className="itinerary-extras">
+                  <summary>Trip updates</summary>
+                  <ReplanControls trip={trip} busy={busy} onReplan={onReplan} />
+                </details>
+              )}
               <details className="data-note">
                 <summary>Route information</summary>
                 {trip.warnings.map((warning) => (
@@ -611,6 +622,11 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
       )}
       {calendarOpen && (
         <CalendarDialog
+          onPlan={(selection) => {
+            setGoogleCalendar(selection);
+            setCalendarOpen(false);
+            setAssistantOpen(true);
+          }}
           imported={importedCalendar}
           onImport={setImportedCalendar}
           planned={

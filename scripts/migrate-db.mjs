@@ -1,7 +1,7 @@
-import { loadEnvConfig } from "@next/env";
+import nextEnv from "@next/env";
 import { readFile, readdir } from "node:fs/promises";
 import pg from "pg";
-loadEnvConfig(process.cwd());
+nextEnv.loadEnvConfig(process.cwd());
 const url = process.env.DATABASE_URL || process.env.TIGER_DATABASE_URL;
 if (!url) {
   console.log(

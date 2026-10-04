@@ -973,6 +973,10 @@ body {
   display: flex;
   gap: 4px;
 }
+.maps-workspace .weather-card {
+  margin-top: 16px;
+  border-radius: 8px;
+}
 .itinerary-extras,
 .data-note {
   border-top: 1px solid var(--line);
