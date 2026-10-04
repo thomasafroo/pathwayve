@@ -2,14 +2,20 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "./Icon";
 
+export type TripChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+};
+
 export function TripChat({
   compact,
-  notes,
+  messages,
   onSend,
   onClose,
 }: {
   compact: boolean;
-  notes: string[];
+  messages: TripChatMessage[];
   onSend: (note: string) => void;
   onClose: () => void;
 }) {
@@ -17,7 +23,7 @@ export function TripChat({
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
-  }, [notes]);
+  }, [messages]);
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft.trim()) return;
@@ -47,15 +53,19 @@ export function TripChat({
           <Icon name="close" size={16} />
         </button>
       </header>
-      <div className="chat-messages" role="log" aria-label="Trip notes">
-        {!notes.length && (
+      <div className="chat-messages" role="log" aria-label="Trip messages">
+        {!messages.length && (
           <p className="chat-empty">
-            What would you like to remember for this trip?
+            Ask about the route, timing, weather, or what to bring.
           </p>
         )}
-        {notes.map((note, index) => (
-          <p className="chat-message" key={index}>
-            {note}
+        {messages.map((message) => (
+          <p
+            className={`chat-message ${message.role}`}
+            key={message.id}
+            aria-label={message.role === "user" ? "You" : "Assistant"}
+          >
+            {message.text}
           </p>
         ))}
         <div ref={end} />
@@ -72,8 +82,8 @@ export function TripChat({
         <button
           type="submit"
           disabled={!draft.trim()}
-          aria-label="Save message"
-          title="Save message"
+          aria-label="Send message"
+          title="Send message"
         >
           <Icon name="send" size={15} />
         </button>

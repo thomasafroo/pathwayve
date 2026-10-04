@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRef, useState } from "react";
-import type { Location, TripEvent, TripRequest } from "@/types/trip";
+import type { Location, TripEvent, TripRequest, TripState } from "@/types/trip";
 import type { TripModification, WorkspaceTrip } from "@/types/workspace";
 import {
   applyModifications,
@@ -17,14 +17,14 @@ import { AddActivityDialog, AddStopDialog } from "./TripEditors";
 import { Icon } from "./Icon";
 import { formatTime } from "./StopCard";
 import { WeatherCard } from "./WeatherCard";
-import { TripChat } from "./TripChat";
+import { TripChat, type TripChatMessage } from "./TripChat";
 import { PlaceSearch } from "./PlaceSearch";
 import type { CandidatePlace } from "@/types/trip";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
   const [itineraryOpen, setItineraryOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [notes, setNotes] = useState<string[]>([]);
+  const [chatMessages, setChatMessages] = useState<TripChatMessage[]>([]);
   const [mapSearchOpen, setMapSearchOpen] = useState(false);
   const [pendingPlace, setPendingPlace] = useState<CandidatePlace | null>(null);
   const chatTrigger = useRef<HTMLButtonElement>(null);
@@ -163,6 +163,14 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     setAssistantOpen(false);
     chatTrigger.current?.focus();
   }
+  function sendChatMessage(text: string) {
+    const userMessage = createChatMessage("user", text);
+    const assistantMessage = createChatMessage(
+      "assistant",
+      getTripChatReply(text, trip, { spare, travel }),
+    );
+    setChatMessages((previous) => [...previous, userMessage, assistantMessage]);
+  }
   return (
     <div className={`maps-workspace ${showItinerary ? "has-itinerary" : ""}`}>
       <header className="workspace-header">
@@ -286,8 +294,8 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           {assistantOpen && (
             <TripChat
               compact={showItinerary}
-              notes={notes}
-              onSend={(note) => setNotes((previous) => [...previous, note])}
+              messages={chatMessages}
+              onSend={sendChatMessage}
               onClose={closeChat}
             />
           )}
@@ -449,4 +457,51 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
       )}
     </div>
   );
+}
+
+function createChatMessage(
+  role: TripChatMessage["role"],
+  text: string,
+): TripChatMessage {
+  return {
+    id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+    role,
+    text,
+  };
+}
+
+function getTripChatReply(
+  message: string,
+  trip: TripState | null,
+  stats: { spare: number; travel: number },
+) {
+  const normalized = message.toLowerCase();
+  if (!trip) {
+    return "I can help once an itinerary exists. For now, tell me where you are starting, where you are going, and any stops you care about.";
+  }
+
+  if (/(weather|rain|umbrella|jacket|bring|wear|pack)/.test(normalized)) {
+    return trip.bringAdvice?.message
+      ? `${trip.bringAdvice.message} Lowest temp: ${Math.round(
+          trip.bringAdvice.facts.minTemperatureCelsius,
+        )} C. Rain chance peaks around ${trip.bringAdvice.facts.maxPrecipitationProbability}%.`
+      : "I do not have weather details for this itinerary yet, but the route and timing are ready.";
+  }
+
+  if (/(time|late|arrive|arrival|finish|deadline|spare)/.test(normalized)) {
+    return `You arrive at ${formatTime(trip.arrivalTime)} with ${stats.spare} min spare. Total travel time is ${stats.travel} min.`;
+  }
+
+  if (/(stop|stops|where|route|order|plan)/.test(normalized)) {
+    const stopNames = trip.stops.map(
+      (stop, index) => `${index + 1}. ${stop.name}`,
+    );
+    return `Current route: ${stopNames.join(" -> ")}.`;
+  }
+
+  if (/(walk|drive|transit|bus|train)/.test(normalized)) {
+    return `This itinerary is planned for ${trip.request.transportation}. The route has ${trip.legs.length} travel legs and about ${stats.travel} min of travel.`;
+  }
+
+  return "Got it. I can answer about route order, arrival time, weather, what to bring, and transit details for this itinerary.";
 }

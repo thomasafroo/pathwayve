@@ -267,7 +267,7 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
   await expect(page.locator(".stop")).toContainText("Sunset Cafe");
 });
 
-test("four planner states keep chat notes and resize when the itinerary opens", async ({
+test("four planner states keep chat messages and resize when the itinerary opens", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
@@ -280,16 +280,19 @@ test("four planner states keep chat notes and resize when the itinerary opens", 
   await page.screenshot({ path: testInfo.outputPath("01-planner.png") });
   await page.getByRole("button", { name: "Open trip chat" }).click();
   const chat = page.getByRole("region", { name: "Trip chat", exact: true });
-  expect((await chat.boundingBox())!.width).toBe(360);
+  expect((await chat.boundingBox())!.width).toBe(1072);
   await page.getByLabel("Chat message").fill("Leave time for lunch");
-  await page.getByRole("button", { name: "Save message" }).click();
+  await page.getByRole("button", { name: "Send message" }).click();
   await expect(chat).toContainText("Leave time for lunch");
+  await expect(chat).toContainText("I can help once an itinerary exists.");
   await page.screenshot({ path: testInfo.outputPath("02-chat.png") });
   await page.getByRole("button", { name: "Load sample trip" }).click();
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-03T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-03T21:00");
   await page.getByRole("button", { name: "Create itinerary" }).click();
   await expect(page.locator(".stop")).toHaveCount(4);
   await expect(chat).toHaveClass(/compact/);
-  await expect.poll(async () => (await chat.boundingBox())!.width).toBe(280);
+  await expect.poll(async () => (await chat.boundingBox())!.width).toBe(688);
   expect((await map.boundingBox())!.width).toBe(720);
   await page.screenshot({ path: testInfo.outputPath("04-itinerary-chat.png") });
   await page.getByRole("button", { name: "Close chat panel" }).click();
