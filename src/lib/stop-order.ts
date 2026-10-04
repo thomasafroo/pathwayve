@@ -45,7 +45,10 @@ export async function optimizeStopOrder<T, R extends { arrival: number }>(
       if (result && (!best || result.arrival < best.result.arrival))
         best = { order, result };
     } catch (error) {
-      if (!(error instanceof AppError && error.code === "NO_ROUTE"))
+      if (!(
+        error instanceof AppError &&
+        ["NO_ROUTE", "OPENING_HOURS"].includes(error.code)
+      ))
         throw error;
     }
   }

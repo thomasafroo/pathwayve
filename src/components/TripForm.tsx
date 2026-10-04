@@ -15,13 +15,17 @@ import {
   type TripState,
 } from "@/types/trip";
 import { endpoints, demoPlaces } from "@/lib/fixtures";
+import { PlaceHours } from "./PlaceHours";
 import { Icon } from "./Icon";
 import { PlaceSearch } from "./PlaceSearch";
 import {
   planningConstraintsSchema,
   type PlanningConstraints,
 } from "@/types/planning-constraints";
-export type TripFormHandle = { getConstraints: () => PlanningConstraints };
+export type TripFormHandle = {
+  getConstraints: () => PlanningConstraints;
+  useLocation: (location: TripRequest["origin"]["location"]) => void;
+};
 const tags = [
   "Libraries",
   "Museums",
@@ -121,6 +125,11 @@ export function TripForm({
     }
   }
   useImperativeHandle(ref, () => ({
+    useLocation(location) {
+      setOrigin({ name: "Your current location", location });
+      setEditing(destination ? null : "destination");
+      changed();
+    },
     getConstraints() {
       const form = new FormData(formRef.current!);
       return planningConstraintsSchema.parse({
@@ -505,9 +514,12 @@ export function TripForm({
                   </button>
                 ))}
               </span>
-              <strong>
-                {index + 1}. {place.name}
-              </strong>
+              <div>
+                <strong>
+                  {index + 1}. {place.name}
+                </strong>
+                {place.openingHours && <PlaceHours place={place} />}
+              </div>
               <label>
                 Stay (min)
                 <input

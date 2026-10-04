@@ -302,3 +302,32 @@ it("enforces chosen order despite a faster reverse journey", async () => {
     second.id,
   ]);
 });
+
+it("AI planning waits for opening and records hours conflicts for mandatory stops", async () => {
+  const input = constraints();
+  input.selectedStops[0].openingHours = {
+    timeZone: "America/Vancouver",
+    checkedAt: "2030-09-01T00:00:00Z",
+    regular: {
+      periods: [
+        {
+          open: { day: 5, hour: 15, minute: 0 },
+          close: { day: 5, hour: 16, minute: 0 },
+        },
+      ],
+    },
+  };
+  const draft = { ...scheduleIntent(), schedule_items: [] };
+  const result = await materializeSchedule(draft, owner, input);
+  expect(result.workspace?.trip.stops[0].arrivalTime).toBe(
+    "2030-10-04T22:00:00.000Z",
+  );
+  expect(result.workspace?.trip.stops[0].waitMinutes).toBe(110);
+  input.selectedStops[0].durationMinutes = 90;
+  const impossible = await materializeSchedule(draft, owner, input);
+  expect(impossible.document.schedule_runs[0].status).toBe("infeasible");
+  expect(
+    impossible.document.schedule_runs[0].result.unscheduled_items[0]
+      .reason_code,
+  ).toBe("OPENING_HOURS");
+});

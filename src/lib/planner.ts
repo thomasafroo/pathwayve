@@ -1,4 +1,5 @@
 import "server-only";
+import { refreshPlaceHours } from "./place-hours";
 import {
   tripRequestSchema,
   tripStateSchema,
@@ -25,7 +26,7 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
       "Choose a future departure for live planning.",
     );
   // Explicit selections are authoritative. No Gemini request is made here.
-  const selected =
+  let selected =
     request.selectedStops !== undefined
       ? request.selectedStops.map((stop) => ({
           ...stop,
@@ -42,6 +43,7 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
             reason: `A sample ${place.category} stop for testing your itinerary.`,
           }))
         : [];
+  selected = await Promise.all(selected.map(refreshPlaceHours));
   if (new Set(selected.map((stop) => stop.id)).size !== selected.length)
     throw new AppError("DUPLICATE_STOP", "Choose each stop once.");
   if (request.orderPolicy === "optimize")
@@ -74,6 +76,17 @@ export async function planTrip(request: TripRequest): Promise<TripState> {
           "Check venue opening hours and prices before leaving.",
           "Routes are planning estimates, not active navigation.",
         ];
+  const unknownHours = scheduled.stops.filter(
+    (stop) => stop.hoursStatus === "unknown",
+  );
+  if (unknownHours.length)
+    warnings.push(
+      `Opening hours unavailable for: ${unknownHours.map((stop) => stop.name).join(", ")}. These visits are unverified.`,
+    );
+  if (scheduled.stops.some((stop) => stop.hoursStatus === "regular"))
+    warnings.push(
+      "Future visits use regular opening hours; holiday changes may not yet be available.",
+    );
   if (optimized)
     warnings.push(
       `Compared ${optimized.evaluated} stop orders using ${mapsMode() === "live" ? "Google Routes travel times" : "demo estimates"}; chose the earliest arrival among available orders. Larger trips use a bounded search.`,

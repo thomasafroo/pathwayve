@@ -1,4 +1,6 @@
 "use client";
+import { NavigationPanel } from "./NavigationPanel";
+import { PlaceHours } from "./PlaceHours";
 import { useEffect, useRef, useState } from "react";
 import {
   APIProvider,
@@ -8,11 +10,26 @@ import {
   useApiLoadingStatus,
   APILoadingStatus,
 } from "@vis.gl/react-google-maps";
-import type { Location, TripState } from "@/types/trip";
+import type { Location, TripState, RouteLeg } from "@/types/trip";
 import { endpoints } from "@/lib/fixtures";
 import { Icon } from "./Icon";
 import { useLiveLocation, type LivePosition } from "@/lib/use-live-location";
 
+function NavigationOverlay({ route }: { route: RouteLeg | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map || !route) return;
+    const line = new google.maps.Polyline({
+      map,
+      path: route.path,
+      strokeColor: "#1769e0",
+      strokeWeight: 7,
+      zIndex: 10,
+    });
+    return () => line.setMap(null);
+  }, [map, route]);
+  return null;
+}
 function PositionOverlay({
   position,
   follow,
@@ -57,6 +74,7 @@ type MapProps = {
   onPick: (location: Location) => void;
   picking: boolean;
   onCancelPick: () => void;
+  onUseLocation?: (location: Location) => void;
 };
 function RouteOverlay({
   trip,
@@ -303,6 +321,8 @@ export function Map(props: MapProps) {
   }
   const [fitCount, setFitCount] = useState(0);
   const location = useLiveLocation();
+  const [navigating, setNavigating] = useState(false);
+  const [navigationRoute, setNavigationRoute] = useState<RouteLeg | null>(null);
   const [follow, setFollow] = useState(true);
   const selected = trip?.stops.find((s) => s.id === selectedId);
   return (
@@ -372,6 +392,7 @@ export function Map(props: MapProps) {
               selectedId={selectedId}
               fitCount={fitCount}
             />
+            <NavigationOverlay route={navigating ? navigationRoute : null} />
             {location.position && (
               <PositionOverlay position={location.position} follow={follow} />
             )}
@@ -427,10 +448,40 @@ export function Map(props: MapProps) {
               <Icon name="locate" size={19} />
               {follow ? "Following you" : "Recenter on me"}
             </button>
-            <button className="location-stop" onClick={location.stop}>
+            <button
+              className="location-stop"
+              onClick={() => {
+                location.stop();
+                setNavigating(false);
+                setNavigationRoute(null);
+              }}
+            >
               Stop tracking
             </button>
           </>
+        )}
+        {location.position && props.onUseLocation && (
+          <button
+            className="location-button"
+            onClick={() => props.onUseLocation?.(location.position!)}
+          >
+            Use my location as start
+          </button>
+        )}
+        {trip?.source === "live" && !navigating && (
+          <button
+            className="location-button"
+            onClick={() => {
+              setNavigating(true);
+              setFollow(true);
+              if (!location.tracking) location.start();
+            }}
+          >
+            Start navigation
+          </button>
+        )}
+        {trip?.source === "demo" && (
+          <p className="location-readout">Navigation requires a live route.</p>
         )}
         {location.tracking && (
           <p className="location-readout" aria-live="polite">
@@ -445,6 +496,19 @@ export function Map(props: MapProps) {
           </p>
         )}
       </div>
+      {navigating && trip?.source === "live" && (
+        <NavigationPanel
+          key={`${trip.id}-${trip.lastUpdated}`}
+          trip={trip}
+          position={location.position}
+          onRoute={setNavigationRoute}
+          onStop={() => {
+            setNavigating(false);
+            setNavigationRoute(null);
+            location.stop();
+          }}
+        />
+      )}
       {picking && (
         <div className="map-pick-banner">
           Click the map to place your new stop.
@@ -460,6 +524,7 @@ export function Map(props: MapProps) {
           </span>
           <div>
             <strong>{selected.name}</strong>
+            <PlaceHours place={selected} />
             <span>
               {selected.durationMinutes} min · {selected.category}
             </span>

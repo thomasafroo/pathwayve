@@ -1,4 +1,6 @@
 import "server-only";
+import { visitWindow } from "./opening-hours";
+import { refreshPlaceHours } from "./place-hours";
 import { randomUUID } from "node:crypto";
 import {
   type GeneratedSchedule,
@@ -107,7 +109,7 @@ export async function materializeSchedule(
     );
     if (chosen) {
       item.place_id = chosen.id;
-      places.set(item.id, chosen);
+      places.set(item.id, await refreshPlaceHours(chosen));
     } else if (item.place_query && model.location_scope === "along_route") {
       genericIds.add(item.id);
     } else if (item.place_query) {
@@ -316,7 +318,7 @@ export async function materializeSchedule(
         new Date(time).toISOString(),
       );
       const arrival = time + leg.durationMinutes * 60000;
-      const start = item.fixed_start_at
+      let start = item.fixed_start_at
         ? Date.parse(item.fixed_start_at)
         : Math.max(
             arrival,
@@ -324,6 +326,25 @@ export async function materializeSchedule(
               ? Date.parse(item.earliest_start_at)
               : arrival,
           );
+      const window = visitWindow(
+        place,
+        start,
+        item.duration_minutes,
+        Math.min(
+          Date.parse(schedule.ends_at),
+          item.latest_end_at ? Date.parse(item.latest_end_at) : Infinity,
+        ),
+        !!item.fixed_start_at,
+      );
+      if (!window) {
+        unavailable(
+          item,
+          "OPENING_HOURS",
+          "The complete visit cannot fit this place’s opening hours within the requested time window.",
+        );
+        continue;
+      }
+      start = window.start;
       const finish = start + item.duration_minutes * 60000;
       if (
         start < arrival ||
@@ -363,9 +384,19 @@ export async function materializeSchedule(
         starts_at: new Date(start).toISOString(),
         ends_at: new Date(finish).toISOString(),
       });
+      if (window.status === "unknown")
+        result.warnings.push(
+          `${place.name}: opening hours unavailable; visit is unverified.`,
+        );
+      if (window.status === "regular")
+        result.warnings.push(
+          `${place.name}: regular opening hours used; holiday changes may differ.`,
+        );
       stops.push({
         ...place,
         arrivalTime: new Date(start).toISOString(),
+        hoursStatus: window.status,
+        waitMinutes: Math.ceil((start - arrival) / 60000),
         durationMinutes: item.duration_minutes,
         priority: item.priority,
         locked: item.order_locked,
@@ -421,7 +452,7 @@ export async function materializeSchedule(
       ? "infeasible"
       : "feasible";
   result.warnings.push(
-    "Place matches were selected from search results. Review them before travelling; opening hours and availability are not verified.",
+    "Place matches were selected from search results. Review place matches before travelling. Availability is not verified; opening-hours checks are shown per stop.",
   );
   if (source === "demo")
     result.warnings.push(

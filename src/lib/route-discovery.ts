@@ -1,4 +1,5 @@
 import "server-only";
+import { visitWindow } from "./opening-hours";
 import type { CandidatePlace, Location, TripRequest } from "@/types/trip";
 import type { SavedItem } from "@/types/schedule";
 import { computeScheduleLeg } from "./schedule-routing";
@@ -57,7 +58,18 @@ export async function traceRoute(
       }
       if (item.earliest_start_at)
         time = Math.max(time, Date.parse(item.earliest_start_at));
-      time += item.duration_minutes * 60000;
+      const window = visitWindow(
+        anchor.place,
+        time,
+        item.duration_minutes,
+        Math.min(
+          Date.parse(request.endTime),
+          item.latest_end_at ? Date.parse(item.latest_end_at) : Infinity,
+        ),
+        !!item.fixed_start_at,
+      );
+      if (!window) return null;
+      time = window.start + item.duration_minutes * 60000;
       if (item.latest_end_at && time > Date.parse(item.latest_end_at))
         return null;
     }

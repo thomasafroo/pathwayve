@@ -1406,3 +1406,44 @@ body {
 .chat-message {
   white-space: pre-wrap;
 }
+
+.place-hours {
+  font-size: 12px;
+  color: #527169;
+  margin: 6px 0;
+}
+.place-hours p {
+  margin: 4px 0;
+}
+.navigation-panel {
+  position: absolute;
+  left: 20px;
+  top: 85px;
+  width: min(370px, calc(100% - 40px));
+  max-height: 55vh;
+  overflow: auto;
+  background: white;
+  padding: 16px;
+  border: 1px solid #dde5de;
+  border-radius: 12px;
+  z-index: 6;
+  box-shadow: 0 3px 15px #203e3020;
+  font-size: 13px;
+}
+.navigation-panel header,
+.navigation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+.navigation-panel button,
+.navigation-panel a {
+  padding: 6px 8px;
+  border: 1px solid #dde5de;
+  border-radius: 6px;
+  background: #f3f8f5;
+}
+.navigation-panel li {
+  margin: 8px 0;
+}

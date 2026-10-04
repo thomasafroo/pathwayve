@@ -206,6 +206,8 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
     await route.fulfill({ json: { source: "live", places } });
   });
   await page.goto("/");
+  await page.getByLabel("Departure", { exact: true }).fill("2030-10-04T09:00");
+  await page.getByLabel("Finish by", { exact: true }).fill("2030-10-04T23:00");
   await page
     .getByRole("combobox", { name: "Search starting point", exact: true })
     .fill("Origin address");
@@ -254,9 +256,7 @@ test("choose arbitrary endpoints and approve ranked places before planning", asy
     "cafe-a",
   ]);
   expect(request.favoritePlaceIds).toEqual(["cafe-b"]);
-  expect(new Date(request.startTime).getTime()).toBeGreaterThan(
-    Date.now() - 60000,
-  );
+  expect(request.startTime).toContain("2030-10-04");
   await expect(page.locator(".stop")).toHaveCount(1);
   await expect(page.locator(".stop")).toContainText("Sunset Cafe");
 });

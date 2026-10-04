@@ -1,4 +1,9 @@
 import "server-only";
+import {
+  providerHoursFields,
+  hoursFieldMask,
+  readOpeningHours,
+} from "@/types/opening-hours";
 import { z } from "zod";
 import {
   autocompleteInputSchema,
@@ -93,6 +98,7 @@ export async function autocompletePlaces(
 }
 
 const detailResponse = z.object({
+  ...providerHoursFields,
   id: z.string(),
   displayName: z.object({ text: z.string() }),
   formattedAddress: z.string().optional(),
@@ -126,8 +132,7 @@ export async function resolvePlace(
   const response = await fetch(url, {
     headers: {
       "X-Goog-Api-Key": requireEnv("GOOGLE_MAPS_SERVER_API_KEY"),
-      "X-Goog-FieldMask":
-        "id,displayName,formattedAddress,location,googleMapsUri",
+      "X-Goog-FieldMask": `id,displayName,formattedAddress,location,googleMapsUri,${hoursFieldMask}`,
     },
     signal: AbortSignal.timeout(15000),
     cache: "no-store",
@@ -148,6 +153,7 @@ export async function resolvePlace(
       category: input.category,
       mapsUrl: place.googleMapsUri,
       attribution: "Google Maps",
+      openingHours: readOpeningHours(place),
     }),
   };
 }

@@ -240,6 +240,11 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
         <div className="map-canvas">
           <Map
             trip={mapTrip}
+            onUseLocation={
+              busy
+                ? undefined
+                : (location) => tripForm.current?.useLocation(location)
+            }
             selectedId={selectedId}
             onSelect={(id) => {
               selectStop(id);

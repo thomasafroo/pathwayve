@@ -1,3 +1,4 @@
+import { PlaceHours } from "./PlaceHours";
 import type { TripStop } from "@/types/trip";
 import type { Activity, TripModification } from "@/types/workspace";
 import { Icon } from "./Icon";
@@ -73,6 +74,7 @@ export function StopCard({
             <Icon name={stop.locked ? "lock" : "unlock"} size={17} />
           </button>
         </div>
+        <PlaceHours place={stop} />
         <p className="stop-reason">{stop.reason}</p>
         <div className="stop-actions">
           <label className="duration-field">

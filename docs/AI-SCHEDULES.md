@@ -177,3 +177,36 @@ expiring after 60 seconds. Identical pending requests are coalesced; failures
 are not cached. Working history remains available through Undo. Activities on
 retained stops survive route recalculation and are validated against stop dwell
 time. Failed calculations retain the last successful map and show an error.
+
+## Opening hours and navigation
+
+Places Text Search and Place Details request `regularOpeningHours`,
+`currentOpeningHours`, `timeZone`, and `businessStatus`. These additional fields
+use Google's applicable Places billing tiers. Place records retain these values
+and their retrieval timestamp. Old Google selections refresh hours during
+planning; failed refreshes become explicitly unknown, never silently verified.
+
+The shared opening-hours evaluator uses the venue's IANA timezone, handles
+night-crossing and 24-hour intervals, and prefers current date-specific hours
+within their seven-day coverage. Beyond that range it uses regular hours with a
+holiday caveat. Flexible visits can wait for opening; fixed appointments cannot
+shift. The entire visit must fit before closing and before the trip deadline.
+Manual plan/edit endpoints reject impossible visits, while AI schedules record
+an OPENING_HOURS conflict and remain infeasible for a missing required stop.
+Optimization and route-corridor discovery evaluate the same hours. Missing hours
+remain allowed but explicitly unverified. Endpoints represent travel endpoints;
+opening-hours checks apply to visits, not merely arriving at an address.
+
+Start navigation is opt-in and only available for live routes. It requests a
+fresh GPS fix (accuracy <=100m), renders the position and a Google Routes leg to
+the next selected stop, and provides route instructions. Routing updates are
+throttled (30-second checks after 50m movement, or after two minutes); stale fixes
+are not sent. Users explicitly continue to each next stop, preserving dwell
+activities. The navigation preview does not modify saved schedules, invoke
+Gemini, or implement voice guidance/lane guidance/automatic turn progression.
+The Google Maps directions URL uses the next destination, chosen travel mode,
+and device location for supported navigation. Stop navigation releases the GPS
+watch. Follow my location also offers Use my location as start for planning.
+
+References: [Place fields](https://developers.google.com/maps/documentation/places/web-service/reference/rest/v1/places),
+[Maps URLs](https://developers.google.com/maps/documentation/urls/get-started).
