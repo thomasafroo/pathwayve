@@ -1,4 +1,5 @@
 node_modules/
+.pathwayve/
 .next/
 .next-e2e/
 .next-preview/

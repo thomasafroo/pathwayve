@@ -1223,3 +1223,132 @@ body {
 .autocomplete-dropdown {
   border-radius: 8px;
 }
+.trip-chat h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.maps-workspace .chat-header-actions .text-button {
+  margin: 0;
+}
+.chat-message.assistant {
+  align-self: flex-start;
+  background: white;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.chat-message.pending {
+  color: var(--muted);
+}
+.chat-error {
+  align-self: stretch;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #9a3026;
+  background: #fbefec;
+  border-radius: 8px;
+}
+.saved-schedule-list {
+  max-height: 160px;
+  overflow-y: auto;
+  border-bottom: 1px solid #edf1ed;
+  background: white;
+  flex-shrink: 0;
+}
+.saved-schedule-list button {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 1px solid #edf1ed;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+}
+.saved-schedule-list button:hover {
+  background: var(--mint);
+}
+.saved-schedule-list span,
+.saved-schedule-list p {
+  font-size: 11px;
+  color: var(--muted);
+}
+.saved-schedule-list p {
+  padding: 12px 16px;
+}
+.maps-workspace .saved-schedule {
+  padding: 0 0 16px;
+  margin-bottom: 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.saved-schedule-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+.saved-schedule .eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--green);
+}
+.saved-schedule h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 4px 0;
+}
+.saved-schedule > p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.saved-items {
+  padding-left: 18px;
+  margin: 12px 0;
+}
+.saved-items li {
+  padding: 10px 0;
+  border-bottom: 1px solid #edf1ed;
+  font-size: 13px;
+}
+.saved-items span,
+.saved-items small {
+  display: block;
+  font-size: 11px;
+  margin: 4px 0;
+  color: var(--muted);
+}
+.saved-items p {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.saved-route {
+  margin: 12px 0;
+}
+.saved-route h3 {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.saved-route .saved-route-endpoints {
+  padding-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.maps-workspace .saved-route .travel-leg {
+  padding: 4px 0 10px 12px;
+  border-bottom: 1px solid #edf1ed;
+}
