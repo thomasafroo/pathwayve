@@ -21,11 +21,13 @@ import { TripChat, type ChatMessage } from "./TripChat";
 import { SavedSchedule } from "./SavedSchedule";
 import type { ScheduleDocument } from "@/types/schedule";
 import { PlaceSearch } from "./PlaceSearch";
+import { AccountControls } from "./AccountControls";
 import type { CandidatePlace } from "@/types/trip";
 import { CalendarDialog } from "./CalendarDialog";
 import { savedScheduleCalendar, workspaceCalendar } from "@/lib/calendar";
 
 export function Planner({ mode }: { mode: "demo" | "live" }) {
+  const [formVersion, setFormVersion] = useState(0);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [importedCalendar, setImportedCalendar] = useState<string | null>(null);
   const [itineraryOpen, setItineraryOpen] = useState(false);
@@ -54,6 +56,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
   function commit(next: WorkspaceTrip) {
     if (state) setHistory((previous) => [...previous.slice(-19), state]);
     setState(next);
+    setSavedDocument(null);
     if (!next.trip.stops.some((s) => s.id === selectedId)) setSelectedId(null);
   }
   async function modify(change: TripModification): Promise<boolean> {
@@ -100,6 +103,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
     try {
       const next = createWorkspace(await tripClient.plan(request));
       setState(next);
+      setSavedDocument(null);
       setHistory([]);
       setSelectedId(null);
       setPicking(false);
@@ -141,6 +145,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
       trip: { ...previous.trip, lastUpdated: new Date().toISOString() },
     });
     setHistory(history.slice(0, -1));
+    setSavedDocument(null);
     setSelectedId(null);
     setError("");
     setMessage("Change undone. Your previous plan is back.");
@@ -193,9 +198,6 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           >
             Calendar
           </button>
-          <span className="trip-name">
-            {trip?.request.destination.name ?? "New trip"}
-          </span>
           <span className="workspace-mode">
             {mode === "demo" ? "Demo" : "Live"}
           </span>
@@ -207,12 +209,45 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               <Icon name="layers" size={16} /> Open itinerary
             </button>
           )}
+          <AccountControls
+            snapshot={{ document: savedDocument, workspace: state }}
+            busy={busy}
+            onOpen={({ document, workspace }) => {
+              setFormVersion((version) => version + 1);
+              setSavedDocument(document);
+              setState(workspace);
+              setHistory([]);
+              setSelectedId(null);
+              setPicking(false);
+              setError("");
+              setMessage("");
+              setItineraryOpen(true);
+            }}
+            onSignOut={() => {
+              setFormVersion((version) => version + 1);
+              setPendingPlace(null);
+              setState(null);
+              setSavedDocument(null);
+              setHistory([]);
+              setChatMessages([]);
+              setAssistantOpen(false);
+              setItineraryOpen(false);
+              setMessage("");
+              setError("");
+              setSelectedId(null);
+              setEditor(null);
+              setPicking(false);
+              setCalendarOpen(false);
+              setImportedCalendar(null);
+            }}
+          />
         </div>
       </header>
       <main className="map-workspace-main">
         <aside className="directions-panel" aria-label="Trip planning panel">
           <div className="panel-content">
             <TripForm
+              key={formVersion}
               busy={busy}
               onPlan={onPlan}
               mode={mode}
@@ -312,12 +347,16 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
               busy={busy}
               onBusy={setBusy}
               onSaved={(document, workspace) => {
+                setFormVersion((version) => version + 1);
                 setSavedDocument(document);
                 setState(workspace);
                 setHistory([]);
                 setSelectedId(null);
                 setPicking(false);
-                setMessage(workspace?.trip.summary ?? "Schedule saved.");
+                setMessage(
+                  workspace?.trip.summary ??
+                    "Schedule ready. Save it to keep it in your account.",
+                );
                 setError("");
                 setItineraryOpen(true);
               }}
@@ -368,7 +407,7 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
           <aside className="itinerary-panel" aria-label="Itinerary panel">
             <header className="itinerary-panel-header">
               <div>
-                <h2>Saved schedule</h2>
+                <h2>Schedule</h2>
                 <p>{savedDocument.schedule_items.length} activities</p>
               </div>
               <button
@@ -489,7 +528,9 @@ export function Planner({ mode }: { mode: "demo" | "live" }) {
                 {trip.warnings.map((warning) => (
                   <p key={warning}>{warning}</p>
                 ))}
-                <p>Your trip stays in this tab. Download a copy to keep it.</p>
+                <p>
+                  Press Save schedule to keep a private copy in your account.
+                </p>
               </details>
             </div>
           </aside>

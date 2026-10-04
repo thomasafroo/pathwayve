@@ -6,6 +6,7 @@ import {
   type SavedRun,
 } from "@/types/schedule";
 import type { Database, SqlConnection } from "./server/database";
+import { workspaceSchema, type WorkspaceTrip } from "@/types/workspace";
 
 const scheduleColumns = [
   "id",
@@ -127,6 +128,7 @@ export async function saveSchedule(
   database: Database,
   document: ScheduleDocument,
   requestId: string,
+  workspace: WorkspaceTrip | null = null,
 ): Promise<void> {
   validateDocument(document);
   await database.transaction(async (connection) => {
@@ -137,6 +139,15 @@ export async function saveSchedule(
       [...scheduleColumns, "request_id"],
       [...scheduleColumns.map((column) => schedule[column]), requestId],
     );
+    if (workspace)
+      await connection.query(
+        "UPDATE pathwayve.schedules SET workspace = $1 WHERE id = $2 AND user_id = $3",
+        [
+          JSON.stringify(workspaceSchema.parse(workspace)),
+          schedule.id,
+          schedule.user_id,
+        ],
+      );
     for (const item of document.schedule_items)
       await insert(
         connection,
@@ -152,6 +163,19 @@ export async function saveSchedule(
       runColumns.map((column) => run[column]),
     );
   });
+}
+export async function readWorkspace(
+  database: SqlConnection,
+  owner: string,
+  id: string,
+) {
+  const result = await database.query<{ workspace: unknown }>(
+    "SELECT workspace FROM pathwayve.schedules WHERE id = $1 AND user_id = $2",
+    [id, owner],
+  );
+  return result.rows[0]?.workspace
+    ? workspaceSchema.parse(result.rows[0].workspace)
+    : null;
 }
 export async function findByRequest(
   database: SqlConnection,

@@ -43,7 +43,7 @@ export function SavedSchedule({
     >
       <div className="saved-schedule-heading">
         <div>
-          <p className="eyebrow">SAVED SCHEDULE · {run.status}</p>
+          <p className="eyebrow">SCHEDULE · {run.status}</p>
           <h2>{schedule.name}</h2>
         </div>
         <button type="button" className="text-button" onClick={onClose}>
@@ -105,9 +105,8 @@ export function SavedSchedule({
         </p>
       ))}
       <p className="hint">
-        Saved in SQL for this browser session. Calculated{" "}
-        {time(run.calculated_at)}. Reopening does not refresh routes. Manual
-        workspace edits do not change this saved snapshot.
+        Calculated {time(run.calculated_at)}. Reopening does not refresh routes.
+        Press Save schedule to keep this version in your private account.
       </p>
       {!run.result.map_trip && run.status !== "failed" && (
         <p className="hint">

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { readSchedule } from "@/lib/schedule-repository";
+import { readSchedule, readWorkspace } from "@/lib/schedule-repository";
 import { getDatabase } from "@/lib/server/database";
 import { scheduleOwner } from "@/lib/server/schedule-session";
 import { AppError, handleApi } from "@/lib/server/http";
@@ -10,17 +10,15 @@ export async function GET(
 ) {
   return handleApi(async () => {
     const id = z.uuid().parse((await context.params).id);
-    const document = await readSchedule(
-      await getDatabase(),
-      await scheduleOwner(),
-      id,
-    );
+    const owner = await scheduleOwner(),
+      db = await getDatabase();
+    const document = await readSchedule(db, owner, id);
     if (!document)
       throw new AppError(
         "NOT_FOUND",
-        "Schedule not found in this browser session.",
+        "Schedule not found in your account.",
         404,
       );
-    return document;
+    return { document, workspace: await readWorkspace(db, owner, id) };
   });
 }
