@@ -52,24 +52,36 @@ export function PlaceSearch({
   const [predictionSource, setPredictionSource] = useState("");
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const listId = `${inputId}-suggestions`;
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-      controller.current?.abort();
-      revision.current++;
-    },
-    [],
-  );
+  // Query whose suggestions are scheduled or loading; cleared once settled.
+  const pendingQuery = useRef<string | null>(null);
+  useEffect(() => {
+    // React can run this cleanup and setup again without unmounting (Strict
+    // Mode, restored Activity). Restart a lookup the cleanup cancelled, or the
+    // list stays on "Finding suggestions…" with no request in flight.
+    if (pendingQuery.current !== null) {
+      const text = pendingQuery.current,
+        token = revision.current;
+      timer.current = setTimeout(() => void suggest(text, token), 300);
+    }
+    return stopRequests;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/unmount only
+  }, []);
   useEffect(() => {
     if (open && active >= 0)
       document
         .getElementById(`${listId}-${active}`)
         ?.scrollIntoView({ block: "nearest" });
   }, [active, listId, open]);
-  function cancelPending() {
+  // Invalidates scheduled and in-flight requests but keeps pendingQuery, so an
+  // effect re-run can restart it.
+  function stopRequests() {
     if (timer.current) clearTimeout(timer.current);
     controller.current?.abort();
     revision.current++;
+  }
+  function cancelPending() {
+    pendingQuery.current = null;
+    stopRequests();
   }
   async function post(url: string, body: unknown) {
     controller.current = new AbortController();
@@ -102,7 +114,10 @@ export function PlaceSearch({
       if (revision.current === token)
         setError(e instanceof Error ? e.message : "Suggestions unavailable.");
     } finally {
-      if (revision.current === token) setLoadingSuggestions(false);
+      if (revision.current === token) {
+        pendingQuery.current = null;
+        setLoadingSuggestions(false);
+      }
     }
   }
   function changeQuery(text: string) {
@@ -117,6 +132,7 @@ export function PlaceSearch({
     setLoadingSuggestions(text.trim().length >= 2);
     if (text.trim().length >= 2) {
       const token = revision.current;
+      pendingQuery.current = text;
       timer.current = setTimeout(() => void suggest(text, token), 300);
     } else session.current = null;
   }

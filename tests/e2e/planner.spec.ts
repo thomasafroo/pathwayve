@@ -1,4 +1,12 @@
 import { expect, test } from "@playwright/test";
+
+// Typing before hydration races React's replay of the input event. The header's
+// session check is requested from an effect, so it only fires once hydrated.
+async function gotoHydrated(page: import("@playwright/test").Page) {
+  const hydrated = page.waitForRequest("**/api/auth/get-session");
+  await page.goto("/");
+  await hydrated;
+}
 test("plan a day and replan while preserving a locked stop", async ({
   page,
 }, testInfo) => {
@@ -483,7 +491,7 @@ test("typing suggests places, keyboard selection resolves coordinates, and sessi
       },
     });
   });
-  await page.goto("/");
+  await gotoHydrated(page);
   const input = page.getByRole("combobox", {
     name: "Search starting point",
     exact: true,
@@ -553,7 +561,7 @@ test("late suggestions cannot replace a newer query or reopen after dismissal", 
       })
       .catch(() => {});
   });
-  await page.goto("/");
+  await gotoHydrated(page);
   const input = page.getByRole("combobox", {
     name: "Search starting point",
     exact: true,
