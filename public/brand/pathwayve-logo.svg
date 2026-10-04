@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260" role="img" aria-labelledby="title">
+  <title id="title">Pathwayve logo</title>
+  <style>
+    @font-face {
+      font-family: "Manrope";
+      src: url("./Manrope-VariableFont_wght.ttf") format("truetype");
+      font-weight: 400 800;
+    }
+  </style>
+  <path
+    d="M40 199V72C40 43 59 27 87 27H98C130 27 150 46 150 76C150 106 130 125 98 125H69L99 194L129 140L159 194"
+    fill="none"
+    stroke="#171915"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="15"
+  />
+  <path
+    d="M159 194L197 125"
+    fill="none"
+    stroke="#829B55"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="15"
+  />
+  <text
+    x="246"
+    y="162"
+    fill="#171915"
+    font-family="Manrope, sans-serif"
+    font-size="82"
+    font-weight="600"
+    letter-spacing="-3.8"
+  >pathwayve</text>
+</svg>

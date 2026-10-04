@@ -416,3 +416,31 @@ test("partial schedule shows routed places and unresolved requests on the left",
     "",
   );
 });
+
+test("map companion animates while planning and celebrates only a completed route", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/schedules/preview", async (route) => {
+    await held;
+    await route.fulfill({ json: { document, workspace: null } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open trip chat" }).click();
+  await page.locator(".chat-new-trip").click();
+  await expect(
+    page.getByLabel("Start a new trip", { exact: true }),
+  ).toBeChecked();
+  await page.getByLabel("Chat message").fill("Plan my day");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".planning-companion.planning")).toBeVisible();
+  await expect(page.locator(".companion-bulb")).toHaveCount(0);
+  await page.screenshot({ path: "/tmp/pathwayve-planning-companion.png" });
+  release();
+  await expect(page.locator(".planning-companion.ready")).toBeVisible();
+  await expect(page.locator(".companion-bulb")).toBeVisible();
+  await page.screenshot({ path: "/tmp/pathwayve-planning-ready.png" });
+});

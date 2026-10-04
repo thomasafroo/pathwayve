@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { BrandLogo } from "./BrandLogo";
 import type { Location, TripEvent, TripRequest } from "@/types/trip";
 import type { TripModification, WorkspaceTrip } from "@/types/workspace";
 import {
@@ -262,10 +263,7 @@ function PlannerSession({
     <div className={`maps-workspace ${showItinerary ? "has-itinerary" : ""}`}>
       <header className="workspace-header">
         <Link href="/" className="workspace-brand" aria-label="PathWayve home">
-          <span>
-            <Icon name="route" size={18} />
-          </span>
-          PathWayve
+          <BrandLogo className="workspace-wordmark" priority />
         </Link>
         <div className="workspace-heading-actions">
           <button

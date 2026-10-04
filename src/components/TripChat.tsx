@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { TripRequest } from "@/types/trip";
 import { workspaceSchema, type WorkspaceTrip } from "@/types/workspace";
 import type { ScheduleDocument } from "@/types/schedule";
+import { PlanningCompanion } from "./PlanningCompanion";
+import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
 
 import type { PlanningConstraints } from "@/types/planning-constraints";
@@ -37,6 +39,9 @@ export function TripChat({
   const [newTrip, setNewTrip] = useState(false);
   const [error, setError] = useState("");
   const [planning, setPlanning] = useState(false);
+  const [planOutcome, setPlanOutcome] = useState<"ready" | "review" | null>(
+    null,
+  );
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [listening, setListening] = useState(false);
@@ -75,7 +80,7 @@ export function TripChat({
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
-  }, [messages, error]);
+  }, [messages, error, planning, planOutcome]);
   useEffect(() => {
     // React Strict Mode runs this effect's cleanup once during development.
     // Reset the flag when the effect is active so completed recordings are not
@@ -98,6 +103,7 @@ export function TripChat({
     sending.current = true;
     onBusy(true);
     setPlanning(true);
+    setPlanOutcome(null);
     setError("");
     requestId.current ??= crypto.randomUUID();
     // A complete journey description replaces the previous trip. Short follow-ups
@@ -174,6 +180,7 @@ export function TripChat({
         ? workspaceSchema.parse(data.workspace)
         : null;
       onSaved(document, workspace);
+      setPlanOutcome(run.status === "feasible" ? "ready" : "review");
       const resultingPlaceIds = new Set(
         document.schedule_items.map((item) => item.place_id).filter(Boolean),
       );
@@ -365,6 +372,7 @@ export function TripChat({
     }
   }
   function startOver() {
+    setPlanOutcome(null);
     setConversation([]);
     setDraft("");
     setError("");
@@ -374,7 +382,7 @@ export function TripChat({
   return (
     <section
       id="trip-chat"
-      className={`trip-chat ${compact ? "compact" : ""}`}
+      className={`trip-chat ${compact ? "compact" : ""} ${planning || planOutcome ? "has-companion" : ""}`}
       aria-label="Trip chat"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -385,7 +393,7 @@ export function TripChat({
     >
       <header>
         <h2>
-          <Icon name="sparkle" size={15} />
+          <BrandLogo compact className="chat-brand-mark" />
           Plan with PathWayve
         </h2>
         <div className="chat-header-actions">
@@ -421,8 +429,8 @@ export function TripChat({
             {message.text}
           </p>
         ))}
-        {planning && (
-          <p className="chat-message assistant pending">Planning…</p>
+        {(planning || planOutcome) && (
+          <PlanningCompanion phase={planning ? "planning" : planOutcome!} />
         )}
         {listening && (
           <p className="chat-message assistant pending">
@@ -443,18 +451,26 @@ export function TripChat({
         Required and locked stops are protected. Ask to remove optional stops in
         chat. General place requests search within your route radius.
       </p>
-      <label>
-        <input
-          type="checkbox"
-          checked={newTrip}
-          disabled={busy}
-          onChange={(event) => {
-            setNewTrip(event.target.checked);
-            setConversation([]);
-          }}
-        />
-        Start a new trip
-      </label>
+      <div className="chat-mode-bar">
+        <span>
+          {newTrip
+            ? "Fresh start · replaces the current trip"
+            : "Keep building on your current trip"}
+        </span>
+        <label className="chat-new-trip">
+          <input
+            type="checkbox"
+            checked={newTrip}
+            disabled={busy}
+            onChange={(event) => {
+              setNewTrip(event.target.checked);
+              setConversation([]);
+            }}
+          />
+          <span className="chat-mode-switch" aria-hidden="true" />
+          Start a new trip
+        </label>
+      </div>
       <form className="chat-composer" onSubmit={submit}>
         <textarea
           ref={composer}
